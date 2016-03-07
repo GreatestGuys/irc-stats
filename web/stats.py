@@ -98,4 +98,5 @@ def show_entries():
     return render_template('index.html')
 
 if __name__ == '__main__':
-    app.run()
+    port = 'PORT' in os.environ and int(os.environ['PORT']) or 5000
+    app.run(host='0.0.0.0', port=port)
