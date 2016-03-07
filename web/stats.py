@@ -17,6 +17,8 @@ DEBUG = True
 logs = None
 app = Flask(__name__)
 app.config.from_object(__name__)
+if 'IRC_STATS_SETTINGS' in os.environ:
+    app.config.from_envvar('IRC_STATS_SETTINGS')
 
 query_cache = {}
 def query_logs(s, cummulative=False):
