@@ -1,0 +1,44 @@
+{% macro line_graph(name, data,
+    width='100%', height='500px', style='',
+    zoom=False, log_scale=False) -%}
+<div id="{{ name }}" style="width:{{ width }}; height:{{ height }}; {{ style }}">
+    <svg style="width:100%; height:100%"></svg>
+  </div>
+  <script>
+nv.addGraph(function() {
+  {% if zoom %}
+  var chart = nv.models.lineWithFocusChart();
+  {% else %}
+  var chart = nv.models.lineChart();
+  {% endif %}
+
+
+  chart.xAxis
+      .tickFormat(function(d) {
+        return d3.time.format('%x')(new Date(d * 1000))
+      });
+
+  {% if log_scale %}
+  chart.y(function(d) {return d.y > 0 ? Math.log10(d.y) : 0;});
+  chart.yAxis.tickFormat(function(d){return (Math.pow(10,d)-1).toFixed(2)});
+  {% else %}
+  chart.yAxis
+      .tickFormat(d3.format(',d'));
+  {% endif %}
+
+  {% if zoom %}
+  chart.y2Axis
+      .tickFormat(d3.format(',d'));
+  {% endif %}
+
+  d3.select('#{{ name }} svg')
+      .datum({{ data | tojson }})
+      .transition().duration(500)
+      .call(chart);
+
+  nv.utils.windowResize(chart.update);
+
+  return chart;
+});
+  </script>
+{%- endmacro %}

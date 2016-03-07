@@ -1,0 +1,76 @@
+{% import "graphs.html" as graphs %}
+{% extends "layout.html" %}
+
+{% block head %}
+<style>
+.jumbotron {
+  text-align: center;
+  border-bottom: 1px solid #e5e5e5;
+}
+</style>
+{% endblock head %}}
+
+{% block body %}
+
+<div class="jumbotron">
+  <h2> Over {{ g.num_tnaks }} TNAKs served! </h2>
+
+  <p class="lead">
+    Monolithic #GreatestGuys IRC logs dating back to February 2013. Logs are
+    available in a easy to process JSON format and regenerated hourly. Add new
+    graphs and visualizations by forking on GitHub. New templates will be
+    automatically pulled in hourly.
+  </p>
+
+  <p>
+    <a class="btn btn-lg btn-success" role="button"
+       href="{{ url_for('static', filename='log.json') }}">
+      Get the logs
+    </a>
+
+    <a class="btn btn-lg btn-info" role="button"
+       href="https://github.com/GreatestGuys/irc-stats">
+      Fork on Github
+    </a>
+  </p>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <h4>Total Chats</h4>
+    {{ graphs.line_graph(
+        'chats-over-time',
+        graph_query([('Chats', '.*')], cummulative=True),
+        height='300px') }}
+  </div>
+
+  <div class="col-lg-6">
+    <h4>Humor</h4>
+    {{ graphs.line_graph(
+        'tnaks-over-time',
+        graph_query(
+            [
+              ('TNAKs', '\\b[Tt][Nn][Aa][Kk]\\b'),
+              ('LOLs', '\\b([Ll]+[Oo]+)([Ll]+([Oo]+)?)+\\b'),
+              ('HAHAs', '\\b([Hh]+[Aa]+)+\\b'),
+              ('BWAHAHAs', '\\b[Bb][Ww][Aa]([Hh]+[Aa]+)+\\b')
+            ],
+            cummulative=True),
+        height='300px',
+        log_scale=True) }}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <h4>Reputation</h4>
+    {{ graphs.line_graph(
+        'rep-over-time',
+        graph_query([('+1', '^\\+1\\b'), ('-1', '^-1\\b')], cummulative=True),
+        height='300px') }}
+  </div>
+</div>
+
+
+
+{% endblock body %}
