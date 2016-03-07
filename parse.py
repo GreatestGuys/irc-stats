@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 #
 # Parse a IRC log file and print a JSON formatted form to STDOUT.
 #
@@ -40,6 +41,7 @@ def parse_generic(f, is_znc_start, is_znc_end, parse_chat):
         (timestamp, nick, msg) = chat
         messages.append({
                 'timestamp': '%d' % timestamp,
+                'datetime': str(datetime.datetime.fromtimestamp(timestamp)),
                 'nick': nick,
                 'message': msg,
             })
@@ -48,8 +50,9 @@ def parse_generic(f, is_znc_start, is_znc_end, parse_chat):
     messages.sort(key=lambda m: m['timestamp'])
     return messages
 
-def make_is_regexp(r):
-    return lambda line: re.search(r, line) != None
+def make_is_regexp(s):
+    r = re.compile(s)
+    return lambda line: r.search(line) != None
 
 def parse_irssi(f):
     # Python's scoping is so fucked up that it is impossible to modify a
@@ -58,17 +61,16 @@ def parse_irssi(f):
     # modify a single element array...
     current_day = [None]
     log_open_re = re.compile(
-            r'^--- (?:[^ ]+ ){2}[^ ]+ ([^0-9]+) ([^ ]+) (?:[^ ]+ )?([0-9]+)'
-                + '(?:--- .*$)?$')
-    chat_re = re.compile(r'^([0-9]{2}:[0-9]{2}) <.([^ ]+)> (.+)$')
+            r'^--- (?:\S+ ){2}\S+ (\D+) (\S+) (?:\S+ )?(\d+)(?:--- .*$)?$')
+    chat_re = re.compile(r'^(\d\d:\d\d) <.(\S+)> (.+)$')
 
     def parse_chat(line):
-        res = log_open_re.search(line)
+        res = log_open_re.match(line)
         if res != None:
             current_day[0] = (res.group(1), res.group(2), res.group(3))
             return None
 
-        res = chat_re.search(line)
+        res = chat_re.match(line)
         if res == None:
             return None
 
@@ -83,7 +85,7 @@ def parse_irssi(f):
 
         full_date_string = '%s %s %s %s' % (current_day[0] + (time_of_day,))
         timestamp = time.mktime(datetime.datetime.strptime(
-                    full_date_string, '%b %d %Y %H:%M').timetuple())
+                full_date_string, '%b %d %Y %H:%M').timetuple())
 
         return (timestamp, nick, message)
 
@@ -94,13 +96,37 @@ def parse_irssi(f):
             parse_chat)
 
 def parse_weechat(f):
+    date_re = '\d+-\d+-\d+ \d+:\d+:\d+'
+    chat_re = re.compile(r'(%s)\s[@+]?(\S+)\s+(.+)' % date_re)
+
     def parse_chat(line):
-        pass
+        res = chat_re.match(line)
+        if res == None:
+            return None
+
+        full_date_string = res.group(1)
+        nick = res.group(2)
+        message = res.group(3)
+
+        # Weechat logs are kind of shitty in that it is hard to differentiate
+        # nicks from status messages. The only way to filter out status messages
+        # is to enumerate every "nick" they come from and skip those lines.
+        bad_nicks = [
+                'ℹ', '--', '-->', '<--', '←', '→', '⚡', '⚠', '│', '+',
+                '▬▬▶', '◀▬▬'
+        ]
+        if nick in bad_nicks:
+            return
+
+        timestamp = time.mktime(datetime.datetime.strptime(
+                full_date_string, '%Y-%m-%d %H:%M:%S').timetuple())
+
+        return (timestamp, nick, message)
 
     return parse_generic(
             f,
-            make_is_regexp(r'^[0-9:\-\s]+\s\*\*\*\s+Buffer Playback'),
-            make_is_regexp(r'^[0-9:\-\s]+\s\*\*\*\s+Playback Complete'),
+            make_is_regexp(r'^%s\s+\*\*\*\s+Buffer Playback' % date_re),
+            make_is_regexp(r'^%s\s+\*\*\*\s+Playback Complete' % date_re),
             parse_chat)
 
 def print_usage():
