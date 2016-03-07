@@ -57,21 +57,24 @@ def parse_irssi(f):
     # The official workaround for this is to make the variable you wish to
     # modify a single element array...
     current_day = [None]
-    log_open_re = r'^--- (?:[^ ]+ ){2}[^ ]+ ([^0-9]+) ([^ ]+) (?:[^ ]+ )?([0-9]+)(?:--- .*$)?$'
-    chat_re = r'^([0-9]{2}:[0-9]{2}) <.([^ ]+)> (.+)$'
+    log_open_re = re.compile(
+            r'^--- (?:[^ ]+ ){2}[^ ]+ ([^0-9]+) ([^ ]+) (?:[^ ]+ )?([0-9]+)'
+                + '(?:--- .*$)?$')
+    chat_re = re.compile(r'^([0-9]{2}:[0-9]{2}) <.([^ ]+)> (.+)$')
 
     def parse_chat(line):
-        res = re.search(log_open_re, line)
+        res = log_open_re.search(line)
         if res != None:
             current_day[0] = (res.group(1), res.group(2), res.group(3))
             return None
 
-        res = re.search(chat_re, line)
+        res = chat_re.search(line)
         if res == None:
             return None
 
         if current_day[0] == None:
-            print 'ERROR: Found a chat line but I don\'t know what day it is!'
+            sys.stderr.write(
+                    'ERROR: Found a chat but I don\'t know what day it is!\n')
             exit(1)
 
         time_of_day = res.group(1)
@@ -80,14 +83,14 @@ def parse_irssi(f):
 
         full_date_string = '%s %s %s %s' % (current_day[0] + (time_of_day,))
         timestamp = time.mktime(datetime.datetime.strptime(
-                    full_date_string, "%b %d %Y %H:%M").timetuple())
+                    full_date_string, '%b %d %Y %H:%M').timetuple())
 
         return (timestamp, nick, message)
 
     return parse_generic(
             f,
-            make_is_regexp(r"^[0-9:]{,5}\s+< \*\*\*> Buffer Playback"),
-            make_is_regexp(r"^[0-9:]{,5}\s+< \*\*\*> Playback Complete"),
+            make_is_regexp(r'^[0-9:]{,5}\s+< \*\*\*> Buffer Playback'),
+            make_is_regexp(r'^[0-9:]{,5}\s+< \*\*\*> Playback Complete'),
             parse_chat)
 
 def parse_weechat(f):
@@ -96,12 +99,12 @@ def parse_weechat(f):
 
     return parse_generic(
             f,
-            make_is_regexp(r"^[0-9:\-\s]+\s\*\*\*\s+Buffer Playback"),
-            make_is_regexp(r"^[0-9:\-\s]+\s\*\*\*\s+Playback Complete"),
+            make_is_regexp(r'^[0-9:\-\s]+\s\*\*\*\s+Buffer Playback'),
+            make_is_regexp(r'^[0-9:\-\s]+\s\*\*\*\s+Playback Complete'),
             parse_chat)
 
 def print_usage():
-    print "usage: parse.py [irssi|weechat]"
+    sys.stderr.write('usage: parse.py [irssi|weechat]\n')
     exit(1)
 
 def print_messages(messages):
