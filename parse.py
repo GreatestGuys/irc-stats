@@ -41,7 +41,6 @@ def parse_generic(f, is_znc_start, is_znc_end, parse_chat):
         (timestamp, nick, msg) = chat
         messages.append({
                 'timestamp': '%d' % timestamp,
-                'datetime': str(datetime.datetime.fromtimestamp(timestamp)),
                 'nick': nick,
                 'message': msg,
             })
