@@ -22,6 +22,7 @@ function addTerm(parentId) {
       <h4>Options</h4>
 
       {{ query_checkbox("Cumulative", "cumulative") }}
+      {{ query_checkbox("Ignore Case", "ignore_case") }}
       {{ query_checkbox("Log Scale", "log_scale") }}
       {{ query_checkbox("Month Granularity", "coarse") }}
       {{ query_checkbox("Split by Nick", "nick_split") }}
@@ -71,6 +72,7 @@ function addTerm(parentId) {
         height='500px',
         coarse=request.args.get('coarse'),
         cumulative=request.args.get('cumulative'),
+        ignore_case=request.args.get('ignore_case'),
         log_scale=request.args.get('log_scale'),
         nick_split=request.args.get('nick_split'),
 				zoom=True) }}

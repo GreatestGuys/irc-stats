@@ -30,13 +30,14 @@ def init_logs():
             logs = json.load(f)
 
 @functools.lru_cache(maxsize=1000)
-def query_logs(s, cumulative=False, coarse=False, nick=None):
+def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
     """
     Query logs for a given regular expression and return a time series of the
     number of occurrences of lines matching the regular expression per day.
     """
 
-    r = re.compile(s)
+    flags = ignore_case and re.IGNORECASE or 0
+    r = re.compile(s, flags=flags)
     results = {}
 
     total = 0
@@ -91,8 +92,9 @@ def graph_query(queries, nick_split=False, **kwargs):
 app.jinja_env.globals['graph_query'] = graph_query
 
 @functools.lru_cache(maxsize=1000)
-def count_occurrences(s):
-    r = re.compile(s)
+def count_occurrences(s, ignore_case=False):
+    flags = ignore_case and re.IGNORECASE or 0
+    r = re.compile(s, flags=flags)
     total = 0
     for line in logs:
         if r.search(line['message']) != None:

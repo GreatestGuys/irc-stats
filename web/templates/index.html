@@ -61,13 +61,14 @@
     {{ graphs.line_graph(
         'tnaks-over-time',
         [
-          ('TNAKs', '\\b[Tt][Nn][Aa][Kk]\\b'),
-          ('LOLs', '\\b([Ll]+[Oo]+)([Ll]+([Oo]+)?)+\\b'),
-          ('HAHAs', '\\b([Hh]+[Aa]+)+\\b'),
-          ('BWAHAHAs', '\\b[Bb][Ww][Aa]([Hh]+[Aa]+)+\\b')
+          ('TNAKs', '\\btnak\\b'),
+          ('LOLs', '\\b(l+o+)(l+(o+)?)+\\b'),
+          ('HAHAs', '\\b(h+a+)+\\b'),
+          ('BWAHAHAs', '\\bbwa(h+a+)+\\b')
         ],
         coarse=True,
         cumulative=True,
+        ignore_case=True,
         log_scale=True) }}
   </div>
 
