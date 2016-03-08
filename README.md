@@ -2,7 +2,7 @@ IRC Stats
 =========
 
 Monolithic #GreatestGuys IRC logs dating back to February 2013. Logs are
-available in a easy to process JSON format and regenerated hourly. Add new
+available in an easy to process JSON format and regenerated hourly. Add new
 graphs and visualizations by forking on GitHub. New templates will be
 automatically pulled in hourly.
 
