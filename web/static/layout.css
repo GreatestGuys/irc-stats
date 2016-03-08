@@ -13,3 +13,7 @@ body {
   margin-bottom: 0;
   line-height: 40px;
 }
+
+.term-row {
+  margin-top: 8px;
+}

@@ -18,9 +18,13 @@ def query(label=None, regexp=None, cumulative=False):
             return [x]
         return x
 
-    label = request.args.get('label')
-    regexp = request.args.get('regexp')
+    label = request.args.getlist('label')
+    regexp = request.args.getlist('regexp')
+
+    query = filter(
+        lambda x: len(x[1]) > 0,
+        zip(to_list(label), to_list(regexp)))
 
     return render_template(
             'query.html',
-            query=list(zip(to_list(label), to_list(regexp))))
+            query=list(query))

@@ -1,0 +1,6 @@
+{% macro nav_item(label, page) -%}
+<li role="presentation"
+    {% if request.endpoint == page %} class="active" {% endif %} >
+  <a href="{{ url_for(page) }}">{{ label }}</a>
+</li>
+{%- endmacro %}
