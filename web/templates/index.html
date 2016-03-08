@@ -40,23 +40,21 @@
     <h4>Total Chats</h4>
     {{ graphs.line_graph(
         'chats-over-time',
-        graph_query([('Chats', '.*')], cummulative=True),
-        height='300px') }}
+        [('Chats', '.*')],
+        cummulative=True) }}
   </div>
 
   <div class="col-lg-6">
     <h4>Humor</h4>
     {{ graphs.line_graph(
         'tnaks-over-time',
-        graph_query(
-            [
-              ('TNAKs', '\\b[Tt][Nn][Aa][Kk]\\b'),
-              ('LOLs', '\\b([Ll]+[Oo]+)([Ll]+([Oo]+)?)+\\b'),
-              ('HAHAs', '\\b([Hh]+[Aa]+)+\\b'),
-              ('BWAHAHAs', '\\b[Bb][Ww][Aa]([Hh]+[Aa]+)+\\b')
-            ],
-            cummulative=True),
-        height='300px',
+        [
+          ('TNAKs', '\\b[Tt][Nn][Aa][Kk]\\b'),
+          ('LOLs', '\\b([Ll]+[Oo]+)([Ll]+([Oo]+)?)+\\b'),
+          ('HAHAs', '\\b([Hh]+[Aa]+)+\\b'),
+          ('BWAHAHAs', '\\b[Bb][Ww][Aa]([Hh]+[Aa]+)+\\b')
+        ],
+        cummulative=True,
         log_scale=True) }}
   </div>
 </div>
@@ -66,8 +64,8 @@
     <h4>Reputation</h4>
     {{ graphs.line_graph(
         'rep-over-time',
-        graph_query([('+1', '^\\+1\\b'), ('-1', '^-1\\b')], cummulative=True),
-        height='300px') }}
+        [('+1', '^\\+1\\b'), ('-1', '^-1\\b')],
+        cummulative=True) }}
   </div>
 </div>
 
