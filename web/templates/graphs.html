@@ -19,12 +19,12 @@ nv.addGraph(function() {
       });
 
   {% if log_scale %}
-  chart.y(function(d) {return d.y > 0 ? Math.log10(d.y) : 0;});
-  chart.yAxis.tickFormat(function(d){return (Math.pow(10,d)-1).toFixed(2)});
-  {% else %}
+  chart.yScale(d3.scale.log());
+  chart.yAxis.tickValues([1,10,100,1000,10000,1000000]);
+  {% endif %}
+
   chart.yAxis
       .tickFormat(d3.format(',d'));
-  {% endif %}
 
   {% if zoom %}
   chart.y2Axis

@@ -1,11 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import time
 import datetime
+import functools
 import json
 import os
 import re
+import time
 
 from flask import Flask, url_for, render_template, g
 
@@ -20,17 +21,12 @@ app.config.from_object(__name__)
 if 'IRC_STATS_SETTINGS' in os.environ:
     app.config.from_envvar('IRC_STATS_SETTINGS')
 
-query_cache = {}
-def query_logs(s, cummulative=False):
+@functools.lru_cache(maxsize=1000)
+def query_logs(s, cummulative=False, coarse=False):
     """
     Query logs for a given regular expression and return a time series of the
     number of occurrences of lines matching the regular expression per day.
     """
-    global query_cache
-
-    cache_key = (s, cummulative)
-    if cache_key in query_cache:
-        return query_cache[cache_key]
 
     r = re.compile(s)
     results = {}
@@ -39,8 +35,9 @@ def query_logs(s, cummulative=False):
 
     def get_key(timestamp):
         d = datetime.datetime.fromtimestamp(float(timestamp))
+        day = coarse and 1 or d.day
         return time.mktime(
-                datetime.datetime(d.year, d.month, d.day).timetuple())
+                datetime.datetime(d.year, d.month, day).timetuple())
 
     def get_value(key):
         if key not in results:
@@ -59,27 +56,16 @@ def query_logs(s, cummulative=False):
         else:
             value['y'] += 1
 
-    values = results.values()
-    values.sort(key=lambda x: x['x'])
+    return sorted(results.values(), key=lambda x: x['x'])
 
-    # Cache the result of the query so that later queries with the same
-    # parameters are fast. Also, to prevent OOM clear the cache once it gets too
-    # big.
-    if len(query_cache) > 1000:
-        query_cache = {}
-    query_cache[cache_key] = values
-
-    return values
-
-def graph_query(queries, cummulative=False):
+def graph_query(queries, **kwargs):
     data = []
     for (label, s) in queries:
         data.append({
             'key': label,
-            'values': query_logs(s, cummulative=cummulative),
+            'values': query_logs(s, **kwargs),
         })
     return data
-
 app.jinja_env.globals['graph_query'] = graph_query
 
 @app.before_request
@@ -90,7 +76,9 @@ def misc_stats():
     if not logs:
         with open(os.path.join(APP_STATIC, 'log.json'), 'r') as f:
             logs = json.load(f)
-            num_tnaks = len(filter(lambda m: 'tnak' in m['message'].lower(), logs))
+            num_tnaks = len(list(filter(
+                    lambda m: 'tnak' in m['message'].lower(),
+                    logs)))
 
 @app.route('/')
 def show_entries():
