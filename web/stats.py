@@ -86,16 +86,16 @@ app.jinja_env.globals['graph_query'] = graph_query
 def misc_stats():
     # Cache the entire log file since it takes several seconds to parse.
     global logs
+    global num_tnaks
     if not logs:
         with open(os.path.join(APP_STATIC, 'log.json'), 'r') as f:
             logs = json.load(f)
-
-    g.logs = logs
-    g.num_tnaks = len(filter(lambda m: 'tnak' in m['message'].lower(), logs))
+            num_tnaks = len(filter(lambda m: 'tnak' in m['message'].lower(), logs))
 
 @app.route('/')
 def show_entries():
-    return render_template('index.html')
+    global num_tnaks
+    return render_template('index.html', num_tnaks=num_tnaks)
 
 if __name__ == '__main__':
     port = 'PORT' in os.environ and int(os.environ['PORT']) or 5000
