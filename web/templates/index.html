@@ -40,6 +40,7 @@
     {{ graphs.line_graph(
         'chats-over-time',
         [('Chats', '.*')],
+        coarse=True,
         cumulative=True) }}
   </div>
 
@@ -48,6 +49,7 @@
     {{ graphs.line_graph(
         'hardest-chatters',
         [('Chats', '.*')],
+        coarse=True,
         cumulative=True,
         nick_split=True) }}
   </div>
@@ -64,6 +66,7 @@
           ('HAHAs', '\\b([Hh]+[Aa]+)+\\b'),
           ('BWAHAHAs', '\\b[Bb][Ww][Aa]([Hh]+[Aa]+)+\\b')
         ],
+        coarse=True,
         cumulative=True,
         log_scale=True) }}
   </div>
@@ -73,6 +76,7 @@
     {{ graphs.line_graph(
         'rep-over-time',
         [('+1', '^\\+1\\b'), ('-1', '^-1\\b')],
+        coarse=True,
         cumulative=True) }}
   </div>
 </div>
