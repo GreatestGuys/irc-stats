@@ -40,10 +40,15 @@ def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
     r = re.compile(s, flags=flags)
     results = {}
 
-    total = 0
+    def to_datetime(timestamp):
+        return datetime.datetime.fromtimestamp(float(timestamp))
+
+    def to_timestamp(d):
+        return time.mktime(
+                datetime.datetime(d.year, d.month, d.day).timetuple())
 
     def get_key(timestamp):
-        d = datetime.datetime.fromtimestamp(float(timestamp))
+        d = to_datetime(timestamp)
         day = coarse and 1 or d.day
         return time.mktime(
                 datetime.datetime(d.year, d.month, day).timetuple())
@@ -61,14 +66,33 @@ def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
             continue
         key = get_key(line['timestamp'])
         value = get_value(key)
-        total += 1
+        value['y'] += 1
+
+    smoothed = {}
+    total = 0
+
+    # Now hat we have a histogram of occurrences over time it must be smoothed
+    # so that there is an entry for each possible key.
+    current_time = to_datetime(logs[0]['timestamp'])
+    end_time = to_datetime(logs[-1]['timestamp'])
+    last_key = None
+    while current_time <= end_time:
+        key = get_key(to_timestamp(current_time))
+        current_time += datetime.timedelta(days=1)
+        if key == last_key:
+            continue
+        last_key = key
+
+        value = key in results and results[key]['y'] or 0
+        total += value
 
         if cumulative:
-            value['y'] = total
+            smoothed[key] = {'x': key, 'y': total}
         else:
-            value['y'] += 1
+            smoothed[key] = {'x': key, 'y': value}
 
-    return sorted(results.values(), key=lambda x: x['x'])
+
+    return sorted(smoothed.values(), key=lambda x: x['x'])
 
 def graph_query(queries, nick_split=False, **kwargs):
     data = []
