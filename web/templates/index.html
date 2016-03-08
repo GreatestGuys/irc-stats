@@ -44,6 +44,17 @@
   </div>
 
   <div class="col-lg-6">
+    <h4>Hardest Chatters</h4>
+    {{ graphs.line_graph(
+        'hardest-chatters',
+        [('Chats', '.*')],
+        cumulative=True,
+        nick_split=True) }}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
     <h4>Humor</h4>
     {{ graphs.line_graph(
         'tnaks-over-time',
@@ -56,9 +67,7 @@
         cumulative=True,
         log_scale=True) }}
   </div>
-</div>
 
-<div class="row">
   <div class="col-lg-6">
     <h4>Reputation</h4>
     {{ graphs.line_graph(
