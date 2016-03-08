@@ -1,0 +1,30 @@
+{% macro query_line(label="", regexp="") -%}
+<div class="row">
+  <div class="col-lg-2">
+    <input
+        type="text"
+        name="label"
+        class="form-control"
+        value="{{ label }}"
+        placeholder="Label" />
+  </div>
+  <div class="col-lg-10">
+    <input
+        type="text"
+        name="regexp"
+        class="form-control"
+        value="{{ regexp }}"
+        placeholder="Regulare Expression" />
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro query_checkbox(label, name) -%}
+<div class="checkbox">
+  <label>
+    <input type="checkbox" name="{{ name }}"
+        {% if request.args.get(name) %} checked {% endif %} />
+    {{ label }}
+  </label>
+</div>
+{%- endmacro %}
