@@ -1,6 +1,6 @@
 {% macro line_graph(name, query,
     width='100%', height='300px', style='',
-    zoom=False, log_scale=False) -%}
+    zoom=False, log_scale=False, normalize=False) -%}
 <div id="{{ name }}" style="width:{{ width }}; height:{{ height }}; {{ style }}">
     <svg style="width:100%; height:100%"></svg>
   </div>
@@ -23,16 +23,22 @@ nv.addGraph(function() {
   chart.yAxis.tickValues([1,10,100,1000,10000,1000000,10000000]);
   {% endif %}
 
-  chart.yAxis
-      .tickFormat(d3.format(',d'));
+  {% if normalize %}
+  chart.yAxis.tickFormat(d3.format(',.4f'));
+  {% else %}
+  chart.yAxis.tickFormat(d3.format(',d'));
+  {% endif %}
 
   {% if zoom %}
-  chart.y2Axis
-      .tickFormat(d3.format(',d'));
+  {% if normalize %}
+  chart.y2Axis.tickFormat(d3.format(',.4f'));
+  {% else %}
+  chart.y2Axis.tickFormat(d3.format(',d'));
+  {% endif %}
   {% endif %}
 
   d3.select('#{{ name }} svg')
-      .datum({{ graph_query(query, **kwargs) | tojson }})
+      .datum({{ graph_query(query, normalize=normalize, **kwargs) | tojson }})
       .transition().duration(500)
       .call(chart);
 

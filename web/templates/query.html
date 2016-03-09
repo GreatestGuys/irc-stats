@@ -25,6 +25,7 @@ function addTerm(parentId) {
       {{ query_checkbox("Ignore Case", "ignore_case") }}
       {{ query_checkbox("Log Scale", "log_scale") }}
       {{ query_checkbox("Month Granularity", "coarse") }}
+      {{ query_checkbox("Normalize", "normalize") }}
       {{ query_checkbox("Split by Nick", "nick_split") }}
 
 			<button class="btn btn btn-success btn-block"
@@ -75,7 +76,8 @@ function addTerm(parentId) {
         ignore_case=request.args.get('ignore_case'),
         log_scale=request.args.get('log_scale'),
         nick_split=request.args.get('nick_split'),
-				zoom=True) }}
+        normalize=request.args.get('normalize'),
+        zoom=True) }}
   </div>
 </div>
 {% endblock body %}

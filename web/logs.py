@@ -30,7 +30,9 @@ def init_logs():
             logs = json.load(f)
 
 @functools.lru_cache(maxsize=1000)
-def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
+def query_logs(s,
+        cumulative=False, coarse=False, nick=None, ignore_case=False,
+        normalize=False):
     """
     Query logs for a given regular expression and return a time series of the
     number of occurrences of lines matching the regular expression per day.
@@ -39,6 +41,7 @@ def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
     flags = ignore_case and re.IGNORECASE or 0
     r = re.compile(s, flags=flags)
     results = {}
+    totals = {}
 
     def to_datetime(timestamp):
         return datetime.datetime.fromtimestamp(float(timestamp))
@@ -53,23 +56,27 @@ def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
         return time.mktime(
                 datetime.datetime(d.year, d.month, day).timetuple())
 
-    def get_value(key):
-        if key not in results:
-            results[key] = {'x': key, 'y': 0}
-        return results[key]
+    def get_value(key, m):
+        if key not in m:
+            m[key] = {'x': key, 'y': 0}
+        return m[key]
 
     for line in logs:
         if nick and line['nick'].lower() not in VALID_NICKS[nick]:
             continue
 
+        key = get_key(line['timestamp'])
+        total_value = get_value(key, totals)
+        total_value['y'] += 1
+
         if r.search(line['message']) == None:
             continue
-        key = get_key(line['timestamp'])
-        value = get_value(key)
+
+        value = get_value(key, results)
         value['y'] += 1
 
     smoothed = {}
-    total = 0
+    total_matched = 0
 
     # Now hat we have a histogram of occurrences over time it must be smoothed
     # so that there is an entry for each possible key.
@@ -84,13 +91,19 @@ def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False):
         last_key = key
 
         value = key in results and results[key]['y'] or 0
-        total += value
+        total_matched += value
 
         if cumulative:
-            smoothed[key] = {'x': key, 'y': total}
+            smoothed[key] = {'x': key, 'y': total_matched}
         else:
             smoothed[key] = {'x': key, 'y': value}
 
+    if normalize and total_matched > 0:
+        for key in smoothed:
+            if cumulative:
+                smoothed[key]['y'] /= total_matched
+            else:
+                smoothed[key]['y'] /= key in totals and totals[key]['y'] or 1
 
     return sorted(smoothed.values(), key=lambda x: x['x'])
 
