@@ -16,6 +16,8 @@ function addTerm(parentId) {
 {% endblock head %}
 
 {% block body %}
+{% set hide_controls = request.args.get("hide_controls") %}
+{% if not hide_controls %}
 <form method="GET">
 	<div class="row">
 		<div class="col-lg-2">
@@ -69,11 +71,24 @@ function addTerm(parentId) {
 		</div>
 	</div>
 </form>
+{% endif %}
 
 <div class="page-header">
-  <h3>
+  <h3 style="display: inline;">
     {{ request.args.get('title') or 'Results' }}
   </h3>
+
+  <div style="display:inline; float:right;">
+    {% if hide_controls %}
+    <a href="{{ modify_query(hide_controls='') }}">
+      Edit
+    </a>
+    {% else %}
+    <a href="{{ modify_query(hide_controls='1') }}">
+      Full Screen
+    </a>
+    {% endif %}
+  </div>
 </div>
 
 <div class="row">

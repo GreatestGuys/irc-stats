@@ -9,6 +9,7 @@ APP_STATIC = os.path.join(APP_ROOT, 'static')
 DEBUG = True
 
 import web.logs
+import web.utils
 import web.views
 
 app.config.from_object(__name__)

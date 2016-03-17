@@ -109,6 +109,7 @@ def query_logs(s,
 
     return sorted(smoothed.values(), key=lambda x: x['x'])
 
+@app.template_global()
 def graph_query(queries, nick_split=False, **kwargs):
     data = []
     for (label, s) in queries:
@@ -128,8 +129,8 @@ def graph_query(queries, nick_split=False, **kwargs):
                     'values': query_logs(s, nick=nick, **kwargs),
                 })
     return data
-app.jinja_env.globals['graph_query'] = graph_query
 
+@app.template_global()
 @functools.lru_cache(maxsize=1000)
 def count_occurrences(s, ignore_case=False):
     flags = ignore_case and re.IGNORECASE or 0
@@ -141,4 +142,3 @@ def count_occurrences(s, ignore_case=False):
         if r.search(line['message']) != None:
             total += 1
     return total
-app.jinja_env.globals['count_occurrences'] = count_occurrences
