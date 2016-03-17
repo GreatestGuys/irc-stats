@@ -39,7 +39,9 @@ def query_logs(s,
     """
 
     flags = ignore_case and re.IGNORECASE or 0
-    r = re.compile(s, flags=flags)
+    try: r = re.compile(s, flags=flags)
+    except: return []
+
     results = {}
     totals = {}
 
@@ -131,7 +133,9 @@ app.jinja_env.globals['graph_query'] = graph_query
 @functools.lru_cache(maxsize=1000)
 def count_occurrences(s, ignore_case=False):
     flags = ignore_case and re.IGNORECASE or 0
-    r = re.compile(s, flags=flags)
+    try: r = re.compile(s, flags=flags)
+    except: return 0
+
     total = 0
     for line in logs:
         if r.search(line['message']) != None:
