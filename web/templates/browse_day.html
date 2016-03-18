@@ -13,10 +13,12 @@
 </div>
 
 <div class="container">
-    <table class="table table-striped">
+    <table class="table">
     <tbody>
     {% for (i, line) in lines %}
-    <tr id="L{{ i }}">
+    <tr
+      style="background-color: {{ color_for_nick(line['nick']) }}"
+      id="L{{ i }}">
       <td>
         {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
         {{ hour }}:{{ minute }}:{{ second }}
