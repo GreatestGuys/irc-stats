@@ -142,3 +142,15 @@ def count_occurrences(s, ignore_case=False):
         if r.search(line['message']) != None:
             total += 1
     return total
+
+@functools.lru_cache(maxsize=1)
+def get_valid_days():
+    """
+    Return a list of (year, month, day) tuples where there is at least one
+    log entry for that day
+    """
+    days = set()
+    for line in logs:
+        dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
+        days.add((dt.year, dt.month, dt.day))
+    return list(days)

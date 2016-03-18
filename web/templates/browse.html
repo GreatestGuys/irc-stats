@@ -1,0 +1,25 @@
+{% from "browse_extras.html" import render_year %}
+
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="row">
+  <div class="col-lg-2">
+    <h4> Jump to Year </h4>
+    <ul>
+      {% for year in range(2016, 2012, -1) %}
+      <li><a href="#{{ year }}"> {{ year }} </a></li>
+      {% endfor %}
+    <ul>
+  </div>
+
+  <div class="col-lg-10">
+    {{ render_year(2016, valid_days) }}
+    {{ render_year(2015, valid_days) }}
+    {{ render_year(2014, valid_days) }}
+    {{ render_year(2013, valid_days) }}
+  </div>
+
+</div>
+
+{% endblock body %}

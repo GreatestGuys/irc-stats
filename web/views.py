@@ -4,7 +4,7 @@ from web import app
 from flask import Flask, url_for, render_template, g, request
 import web.logs
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def home():
     num_tnaks = web.logs.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
     return render_template('index.html', num_tnaks=num_tnaks)
@@ -28,3 +28,7 @@ def query(label=None, regexp=None, cumulative=False):
     return render_template(
             'query.html',
             query=list(query))
+
+@app.route('/browse', methods=['GET'])
+def browse(label=None, regexp=None, cumulative=False):
+    return render_template('browse.html', valid_days=web.logs.get_valid_days())

@@ -8,6 +8,7 @@ APP_STATIC = os.path.join(APP_ROOT, 'static')
 
 DEBUG = True
 
+import web.dates
 import web.logs
 import web.utils
 import web.views

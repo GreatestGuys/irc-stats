@@ -17,3 +17,25 @@ body {
 .term-row {
   margin-top: 8px;
 }
+
+.month > h4 {
+  text-align: center;
+}
+
+.month-row {
+  text-align: justify;
+}
+
+.month-row:after {
+  display:inline-block;
+  width:100%;
+  content: '';
+}
+
+.month-row .month-cell {
+  display: inline-block;
+  width: 12.25%;
+  min-width: 1em;
+  text-align: center;
+  color: #AAA;
+}
