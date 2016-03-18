@@ -79,6 +79,7 @@ def query_logs(s,
 
     smoothed = {}
     total_matched = 0
+    total_possible = 0
 
     # Now hat we have a histogram of occurrences over time it must be smoothed
     # so that there is an entry for each possible key.
@@ -93,17 +94,22 @@ def query_logs(s,
         last_key = key
 
         value = key in results and results[key]['y'] or 0
+        total_possible += key in totals and totals[key]['y'] or 0
         total_matched += value
 
         if cumulative:
             smoothed[key] = {'x': key, 'y': total_matched}
+            totals[key] = {'x': key, 'y': total_possible}
         else:
             smoothed[key] = {'x': key, 'y': value}
 
     if normalize and total_matched > 0:
         for key in smoothed:
             if cumulative:
-                smoothed[key]['y'] /= total_matched
+                if totals[key]['y'] == 0:
+                    smoothed[key]['y'] = 0
+                else:
+                    smoothed[key]['y'] /= totals[key]['y']
             else:
                 smoothed[key]['y'] /= key in totals and totals[key]['y'] or 1
 
