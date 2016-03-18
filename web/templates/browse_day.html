@@ -2,13 +2,13 @@
 {% extends "layout.html" %}
 
 {% block body %}
+<center>
+  <h3> {{ day }} {{ month_name(month) }} {{ year }} </h3>
+</center>
+
 <div class="row">
   <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
-  <div class="col-xs-10">
-    <center>
-      <h3> {{ day }} {{ month_name(month) }} {{ year }} </h3>
-    </center>
-  </div>
+  <div class="col-xs-10"></div>
   <div class="col-xs-1"> {{ day_link(next_day, "Next") }} </div>
 </div>
 
