@@ -149,8 +149,19 @@ def get_valid_days():
     Return a list of (year, month, day) tuples where there is at least one
     log entry for that day
     """
-    days = set()
+    return sorted(get_logs_by_day().keys())
+
+@functools.lru_cache(maxsize=1)
+def get_logs_by_day():
+    """
+    Return a map from (year, month, day) tuples to log lines occurring on that
+    day.
+    """
+    days = {}
     for line in logs:
         dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
-        days.add((dt.year, dt.month, dt.day))
-    return list(days)
+        key = (dt.year, dt.month, dt.day)
+        if key not in days:
+            days[key] = []
+        days[key].append(line)
+    return days

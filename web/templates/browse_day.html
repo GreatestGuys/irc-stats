@@ -1,0 +1,44 @@
+{% from "browse_extras.html" import day_link %}
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="row">
+  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
+  <div class="col-xs-10">
+    <center>
+      <h3> {{ day }} {{ month_name(month) }} {{ year }} </h3>
+    </center>
+  </div>
+  <div class="col-xs-1"> {{ day_link(next_day, "Next") }} </div>
+</div>
+
+<div class="container">
+    <table class="table table-striped">
+    <tbody>
+    {% for (i, line) in lines %}
+    <tr id="L{{ i }}">
+      <td>
+        {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
+        {{ hour }}:{{ minute }}:{{ second }}
+      </td>
+      <td>
+        {{ line['nick'] }}
+      </td>
+      <td style="word-break: break-all;">
+        {{ line['message'] }}
+      </td>
+      <td>
+        <a class="btn btn-xs btn-link" href="#L{{ i }}"> &#x1F517; </a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+</div>
+
+<div class="row">
+  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
+  <div class="col-xs-10"></div>
+  <div class="col-xs-1"> {{ day_link(next_day, "Next") }} </div>
+</div>
+{% endblock body %}
