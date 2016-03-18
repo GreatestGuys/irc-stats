@@ -171,3 +171,23 @@ def get_logs_by_day():
             days[key] = []
         days[key].append(line)
     return days
+
+@functools.lru_cache(maxsize=1000)
+def search_day_logs(s, ignore_case=False):
+    """
+    Return a list of matching log lines of the form:
+            ((year, month, day), index, line)
+    """
+    flags = ignore_case and re.IGNORECASE or 0
+    try: r = re.compile(s, flags=flags)
+    except: return []
+
+    results = []
+    day_logs = get_logs_by_day()
+    for day in reversed(sorted(day_logs.keys())):
+        index = 0
+        for line in day_logs[day]:
+            if r.search(line['message']) != None:
+                results.append((day, index, line))
+            index += 1
+    return results

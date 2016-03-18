@@ -57,4 +57,17 @@ def browse_day(year, month, day):
 
 @app.route('/search', methods=['GET'])
 def search():
-    return render_template('search.html')
+    LINES_PER_PAGE = 50
+    lines = []
+
+    query = request.args.get('q')
+    page = request.args.get('p') or 0
+    if query:
+        lines = web.logs.search_day_logs(query)
+
+    if lines:
+        start = min(page * LINES_PER_PAGE, len(lines) - 1)
+        end = min((page + 1) * LINES_PER_PAGE, len(lines) - 1)
+        lines = lines[start:end]
+
+    return render_template('search.html', lines=lines)
