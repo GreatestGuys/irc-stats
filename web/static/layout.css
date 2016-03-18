@@ -39,3 +39,15 @@ body {
   text-align: center;
   color: #AAA;
 }
+
+.search-box {
+    margin: 20px;
+}
+
+.align-right {
+    text-align: right;
+}
+
+.align-center {
+    text-align: center;
+}

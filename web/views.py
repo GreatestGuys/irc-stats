@@ -57,17 +57,35 @@ def browse_day(year, month, day):
 
 @app.route('/search', methods=['GET'])
 def search():
-    LINES_PER_PAGE = 50
+    LINES_PER_PAGE = 25
     lines = []
 
+    start = 0
+    end = 0
     query = request.args.get('q')
-    page = request.args.get('p') or 0
+    page = request.args.get('p', 0, type=int)
+    ignore_case = request.args.get('ignore_case', False, type=bool)
     if query:
-        lines = web.logs.search_day_logs(query)
+        lines = web.logs.search_day_logs(query, ignore_case=ignore_case)
 
+    total_lines = len(lines)
     if lines:
         start = min(page * LINES_PER_PAGE, len(lines) - 1)
-        end = min((page + 1) * LINES_PER_PAGE, len(lines) - 1)
+        end = min((page + 1) * LINES_PER_PAGE, len(lines))
         lines = lines[start:end]
 
-    return render_template('search.html', lines=lines)
+    for i in range(0, len(lines)):
+        (day, index, line, match_start, match_end) = lines[i]
+        prefix = line['message'][:match_start]
+        match = line['message'][match_start:match_end]
+        sufix = line['message'][match_end:]
+        lines[i] = (day, index, line, prefix, match, sufix)
+
+    next_page = page * LINES_PER_PAGE < total_lines and page + 1 or None
+    prev_page = None
+    if page > 0: prev_page = page - 1
+
+    return render_template('search.html',
+            start=(start + 1), end=end,
+            lines=lines, total_lines=total_lines,
+            next_page=next_page, prev_page=prev_page)

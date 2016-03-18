@@ -1,46 +1,57 @@
-{% from "browse_extras.html" import day_link %}
 {% extends "layout.html" %}
+
+{% macro day_link(day, text) -%}
+{% if day %}
+<a href="{{ url_for('browse_day', year=day[0], month=day[1], day=day[2]) }}"
+   class="btn btn-lg btn-link">
+  {{ text }}
+</a>
+{% else %}
+<a href="#" class="btn btn-lg btn-link disabled">
+  {{ text }}
+</a>
+{% endif %}
+{% endmacro -%}
+
+{% macro day_nav() -%}
+<div class="row">
+  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
+  <div class="col-xs-10"></div>
+  <div class="col-xs-1 align-right"> {{ day_link(next_day, "Next") }} </div>
+</div>
+{% endmacro -%}
 
 {% block body %}
 <center>
   <h3> {{ day }} {{ month_name(month) }} {{ year }} </h3>
 </center>
 
-<div class="row">
-  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
-  <div class="col-xs-10"></div>
-  <div class="col-xs-1"> {{ day_link(next_day, "Next") }} </div>
-</div>
+{{ day_nav() }}
 
-<div class="container">
-    <table class="table">
-    <tbody>
-    {% for (i, line) in lines %}
-    <tr
-      style="background-color: {{ color_for_nick(line['nick']) }}"
-      id="L{{ i }}">
-      <td>
-        {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
-        {{ hour }}:{{ minute }}:{{ second }}
-      </td>
-      <td>
-        {{ line['nick'] }}
-      </td>
-      <td style="word-break: break-all;">
-        {{ line['message'] }}
-      </td>
-      <td>
-        <a class="btn btn-xs btn-link" href="#L{{ i }}"> &#x1F517; </a>
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-    </table>
-</div>
+<table class="table">
+  <tbody>
+  {% for (i, line) in lines %}
+  <tr
+    style="background-color: {{ color_for_nick(line['nick']) }}"
+    id="L{{ i }}">
+    <td>
+      {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
+      {{ hour }}:{{ minute }}:{{ second }}
+    </td>
+    <td>
+      {{ line['nick'] }}
+    </td>
+    <td style="word-break: break-all; width: 100%">
+      {{ line['message'] }}
+    </td>
+    <td>
+      <a class="btn btn-xs btn-link" href="#L{{ i }}"> &#x1F517; </a>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
 
-<div class="row">
-  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
-  <div class="col-xs-10"></div>
-  <div class="col-xs-1"> {{ day_link(next_day, "Next") }} </div>
-</div>
+{{ day_nav() }}
+
 {% endblock body %}

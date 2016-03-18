@@ -49,16 +49,3 @@
   {% endif %}
 {% endfor %}
 {% endmacro -%}
-
-{% macro day_link(day, text) -%}
-{% if day %}
-<a href="{{ url_for('browse_day', year=day[0], month=day[1], day=day[2]) }}"
-   class="btn btn-lg btn-link">
-  {{ text }}
-</a>
-{% else %}
-<a href="#" class="btn btn-lg btn-link disabled">
-  {{ text }}
-</a>
-{% endif %}
-{% endmacro -%}

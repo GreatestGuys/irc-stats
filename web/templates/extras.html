@@ -1,0 +1,10 @@
+{% macro checkbox(label, name) -%}
+<div class="checkbox">
+  <label>
+    <input type="checkbox" name="{{ name }}"
+        {% if request.args.get(name) %} checked {% endif %} />
+    {{ label }}
+  </label>
+</div>
+{%- endmacro %}
+

@@ -1,7 +1,32 @@
+{% from "extras.html" import checkbox %}
 {% extends "layout.html" %}
 
-{% block body %}
+{% macro page_link(page, text) -%}
+{% if page != None %}
+<a href="{{ modify_query(p=page) }}" class="btn btn-lg btn-link">
+  {{ text }}
+</a>
+{% else %}
+<a href="#" class="btn btn-lg btn-link disabled">
+  {{ text }}
+</a>
+{% endif %}
+{% endmacro -%}
+
+{% macro page_nav() -%}
 <div class="row">
+  <div class="col-xs-4"> {{ page_link(prev_page, "Previous") }} </div>
+  <div class="col-xs-4 align-center">
+    <h4>
+      {{ start }} - {{ end }} of {{ total_lines }}
+    </h4>
+  </div>
+  <div class="col-xs-4 align-right"> {{ page_link(next_page, "Next") }} </div>
+</div>
+{% endmacro -%}
+
+{% block body %}
+<div class="row search-box">
   <form>
     <div class="col-md-10">
       <input
@@ -9,7 +34,7 @@
           name="q"
           class="form-control"
           value="{{ request.args.get('q') or '' }}"
-          placeholder="Search" />
+          placeholder="Regular Expression" />
     </div>
     <div class="col-md-2">
       <button class="btn btn btn-success btn-block"
@@ -18,52 +43,47 @@
         Search
       </button>
     </div>
+    <div class="col-md-2">
+      {{ checkbox("Ignore Case", "ignore_case") }}
+    </div>
   </form>
 </div>
 
-<div class="row">
-  <div class="col-xs-1"> Previous </div>
-  <div class="col-xs-10"></div>
-  <div class="col-xs-1"> Next </div>
-</div>
+{% if lines != [] %}
 
-<div class="row">
-  <div class="col-xs-12">
-    <table class="table table-striped">
-    <tbody>
-    {% for ((year, month, day), i, line) in lines %}
-    <tr>
-      <td>
-        {{ day }}/{{ month }}/{{ year }}
-      </td>
-      <td>
-        {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
-        {{ hour }}:{{ minute }}:{{ second }}
-      </td>
-      <td>
-        {{ line['nick'] }}
-      </td>
-      <td style="word-break: break-all;">
-        {{ line['message'] }}
-      </td>
-      <td>
-        <a href="{{ url_for(
-            'browse_day',
-            year=year, month=month, day=day,
-            _anchor='L%d' % i) }}" class="btn btn-sm btn-link">
-            Go To
-        </a>
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-    </table>
-  </div>
-</div>
+{{ page_nav() }}
 
-<div class="row">
-  <div class="col-xs-1"> Previous </div>
-  <div class="col-xs-10"></div>
-  <div class="col-xs-1"> Next </div>
-</div>
+<table class="table table-striped">
+<tbody>
+{% for ((year, month, day), i, line, prefix, match, sufix) in lines %}
+<tr>
+  <td style="">
+    {{ day }}/{{ month }}/{{ year }}
+  </td>
+  <td>
+    {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
+    {{ hour }}:{{ minute }}:{{ second }}
+  </td>
+  <td>
+    {{ line['nick'] }}
+  </td>
+  <td style="word-break: break-all; width: 100%">
+    {{ prefix }}<span class='alert-danger'>{{ match }}</span>{{ sufix }}
+  </td>
+  <td>
+    <a href="{{ url_for(
+        'browse_day',
+        year=year, month=month, day=day,
+        _anchor='L%d' % i) }}" class="btn btn-sm btn-link">
+        Go To
+    </a>
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+{{ page_nav() }}
+
+{% endif %}
 {% endblock body %}

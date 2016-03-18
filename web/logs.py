@@ -187,7 +187,8 @@ def search_day_logs(s, ignore_case=False):
     for day in reversed(sorted(day_logs.keys())):
         index = 0
         for line in day_logs[day]:
-            if r.search(line['message']) != None:
-                results.append((day, index, line))
+            m = r.search(line['message'])
+            if m != None:
+                results.append((day, index, line, m.start(), m.end()))
             index += 1
     return results

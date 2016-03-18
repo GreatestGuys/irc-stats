@@ -1,6 +1,6 @@
 {% import "graphs.html" as graphs %}
+{% from "extras.html" import checkbox %}
 {% from "query_extras.html" import query_line %}
-{% from "query_extras.html" import query_checkbox %}
 {% extends "layout.html" %}
 
 {% block head %}
@@ -23,12 +23,12 @@ function addTerm(parentId) {
 		<div class="col-lg-2">
       <h4>Options</h4>
 
-      {{ query_checkbox("Cumulative", "cumulative") }}
-      {{ query_checkbox("Ignore Case", "ignore_case") }}
-      {{ query_checkbox("Log Scale", "log_scale") }}
-      {{ query_checkbox("Month Granularity", "coarse") }}
-      {{ query_checkbox("Normalize", "normalize") }}
-      {{ query_checkbox("Split by Nick", "nick_split") }}
+      {{ checkbox("Cumulative", "cumulative") }}
+      {{ checkbox("Ignore Case", "ignore_case") }}
+      {{ checkbox("Log Scale", "log_scale") }}
+      {{ checkbox("Month Granularity", "coarse") }}
+      {{ checkbox("Normalize", "normalize") }}
+      {{ checkbox("Split by Nick", "nick_split") }}
 
       <div class="checkbox">
         <input
