@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="row">
+  <form>
+    <div class="col-md-10">
+      <input
+          type="text"
+          name="q"
+          class="form-control"
+          value="{{ request.args.get('q') or '' }}"
+          placeholder="Search" />
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn btn-success btn-block"
+              type="submit"
+              onclick="addTerm('term-container')">
+        Search
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="row">
+  <div class="col-xs-1"> Previous </div>
+  <div class="col-xs-10"></div>
+  <div class="col-xs-1"> Next </div>
+</div>
+
+<div class="row">
+  <div class="col-xs-12">
+    <table class="table table-striped">
+    <tbody>
+    {% for (day, i, line) in lines %}
+    <tr id="L{{ i }}">
+      <td>
+        {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
+        {{ hour }}:{{ minute }}:{{ second }}
+      </td>
+      <td>
+        {{ line['nick'] }}
+      </td>
+      <td style="word-break: break-all;">
+        {{ line['message'] }}
+      </td>
+      <td>
+        <a class="btn btn-xs btn-link" href="#L{{ i }}"> &#x1F517; </a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xs-1"> Previous </div>
+  <div class="col-xs-10"></div>
+  <div class="col-xs-1"> Next </div>
+</div>
+{% endblock body %}

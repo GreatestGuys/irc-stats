@@ -54,3 +54,7 @@ def browse_day(year, month, day):
             next_day=next_day,
             prev_day=prev_day,
             year=year, month=month, day=day)
+
+@app.route('/search', methods=['GET'])
+def search():
+    return render_template('search.html')
