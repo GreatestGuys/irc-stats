@@ -30,7 +30,15 @@
 
 <table class="table">
   <tbody>
-  {% for (i, line) in lines %}
+  {% for line_or_pause in lines %}
+  {% if line_or_pause == None %}
+    <tr>
+      <td class="text-muted align-center" colspan="4">
+        &#x25cf; &#x25cf; &#x25cf;
+      </td>
+    </tr>
+  {% else %}
+  {% set (i, line) = line_or_pause %}
   <tr
     style="background-color: {{ color_for_nick(line['nick']) }}"
     id="L{{ i }}">
@@ -48,6 +56,7 @@
       <a class="btn btn-xs btn-link" href="#L{{ i }}"> &#x1F517; </a>
     </td>
   </tr>
+  {% endif %}
   {% endfor %}
   </tbody>
 </table>

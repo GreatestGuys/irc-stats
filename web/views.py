@@ -49,8 +49,19 @@ def browse_day(year, month, day):
         if index < len(keys) - 1:
             next_day = keys[index + 1]
 
+    lines = list(zip(range(0, len(lines)), lines))
+    # Insert breaks every time there is a larger than 1 hour break in
+    # conversation.
+    lines_with_pauses = [lines[0]]
+    for i in range(1, len(lines)):
+        last_time = int(lines[i - 1][1]['timestamp'])
+        this_time = int(lines[i][1]['timestamp'])
+        if this_time - last_time > 60 * 60:
+            lines_with_pauses.append(None)
+        lines_with_pauses.append(lines[i])
+
     return render_template('browse_day.html',
-            lines=zip(range(0, len(lines)), lines),
+            lines=lines_with_pauses,
             next_day=next_day,
             prev_day=prev_day,
             year=year, month=month, day=day)
