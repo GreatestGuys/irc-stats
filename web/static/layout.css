@@ -9,6 +9,11 @@ a.anchor {
     visibility: hidden;
 }
 
+.footer {
+  bottom: 0px;
+	width: 100%;
+}
+
 .term-row {
   margin-top: 8px;
 }

@@ -1,3 +1,4 @@
+import datetime
 import os
 from flask import Flask
 
@@ -16,3 +17,8 @@ import web.views
 app.config.from_object(__name__)
 if 'IRC_STATS_SETTINGS' in os.environ:
     app.config.from_envvar('IRC_STATS_SETTINGS')
+
+start_time = datetime.datetime.now().strftime('%I:%M%P on %B %d, %Y')
+@app.template_global()
+def get_start_time():
+    return start_time
