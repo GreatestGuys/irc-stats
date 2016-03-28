@@ -2,6 +2,7 @@
 
 from web import app
 from flask import Flask, url_for, render_template, g, request
+import re
 import web.logs
 
 @app.route('/', methods=['GET'])
@@ -35,6 +36,8 @@ def browse():
 
 @app.route('/browse/<int:year>/<int:month>/<int:day>', methods=['GET'])
 def browse_day(year, month, day):
+    r = re.compile('(https?://\\S+)', flags=re.IGNORECASE)
+
     day_logs = web.logs.get_logs_by_day()
     key = (year, month, day)
     prev_day = None
@@ -49,10 +52,25 @@ def browse_day(year, month, day):
         if index < len(keys) - 1:
             next_day = keys[index + 1]
 
+    # Find all the links in each line and mark them so that they can be rendered
+    # as hyperlinks.
+    for line in lines:
+        message = line['message']
+        message_parts = []
+        last_end = 0
+        for link in r.finditer(message):
+            start = link.start()
+            end = link.end()
+            message_parts.append((False, message[last_end : start]))
+            message_parts.append((True, message[start : end]))
+            last_end = end
+        message_parts.append((False, message[last_end :]))
+        line['message_parts'] = message_parts
+
     lines = list(zip(range(0, len(lines)), lines))
     # Insert breaks every time there is a larger than 1 hour break in
     # conversation.
-    lines_with_pauses = [lines[0]]
+    lines_with_pauses = len(lines) > 0 and [lines[0]] or []
     for i in range(1, len(lines)):
         last_time = int(lines[i - 1][1]['timestamp'])
         this_time = int(lines[i][1]['timestamp'])
