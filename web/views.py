@@ -92,7 +92,7 @@ def search():
         sufix = line['message'][match_end:]
         lines[i] = (day, index, line, prefix, match, sufix)
 
-    next_page = page * LINES_PER_PAGE < total_lines and page + 1 or None
+    next_page = (page + 1) * LINES_PER_PAGE < total_lines and page + 1 or None
     prev_page = None
     if page > 0: prev_page = page - 1
 

@@ -1,11 +1,11 @@
 {% macro render_month(year, month, valid_days) -%}
 {% set (offset, days) = monthrange(year, month) %}
 
-  <div class="month col-lg-3">
+  <div class="month col-md-3">
     <h4> {{ month_name(month) }} </h4>
     <div class="month-row">
 
-    {% for i in range(0, offset) %}
+    {% for i in range(0, offset + 1) %}
       <div class="month-cell"></div>
     {% endfor %}
 

@@ -1,4 +1,11 @@
-{% from "layout_extras.html" import nav_item %}
+{% macro nav_item(label, page, sub_pages) -%}
+<li role="presentation"
+    {% if request.endpoint == page or request.endpoint in sub_pages %}
+    class="active"
+    {% endif %} >
+  <a href="{{ url_for(page) }}">{{ label }}</a>
+</li>
+{%- endmacro %}
 
 <!DOCTYPE html>
 <html>
@@ -20,22 +27,33 @@
     {% block head %}{% endblock %}
   </head>
   <body>
-    <div class="container">
 
-      <div class="header clearfix">
-        <nav>
-          <ul class="nav nav-pills pull-right">
-            {{ nav_item('Home', 'home') }}
+    <nav class="navbar navbar-default navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="{{ url_for('home') }}">#greatestguys</a>
+        </div>
+        <div id="navbar" class="navbar-collapse collapse">
+          <ul class="nav navbar-nav navbar-right">
             {{ nav_item('Graph', 'query') }}
             {{ nav_item('Browse', 'browse', ['browse_day']) }}
             {{ nav_item('Search', 'search') }}
           </ul>
-        </nav>
-
-        <h3 class="text-muted">#greatestguys</h3>
+        </div>
       </div>
+    </nav>
 
+    <div class="container">
       {% block body %}{% endblock %}
     </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="/static/bootstrap.min.js"></script>
   </body>
 </html>

@@ -15,9 +15,8 @@
 
 {% macro day_nav() -%}
 <div class="row">
-  <div class="col-xs-1"> {{ day_link(prev_day, "Previous") }} </div>
-  <div class="col-xs-10"></div>
-  <div class="col-xs-1 align-right"> {{ day_link(next_day, "Next") }} </div>
+  <div class="col-xs-6"> {{ day_link(prev_day, "Previous") }} </div>
+  <div class="col-xs-6 align-right"> {{ day_link(next_day, "Next") }} </div>
 </div>
 {% endmacro -%}
 
@@ -40,8 +39,7 @@
   {% else %}
   {% set (i, line) = line_or_pause %}
   <tr
-    style="background-color: {{ color_for_nick(line['nick']) }}"
-    id="L{{ i }}">
+    style="background-color: {{ color_for_nick(line['nick']) }}">
     <td>
       {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
       {{ hour }}:{{ minute }}:{{ second }}
@@ -49,7 +47,8 @@
     <td>
       {{ line['nick'] }}
     </td>
-    <td style="word-break: break-all; width: 100%">
+    <td style="word-break: break-word; width: 100%">
+			<a class="anchor" id="L{{ i }}"></a>
       {{ line['message'] }}
     </td>
     <td>

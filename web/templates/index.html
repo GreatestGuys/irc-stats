@@ -35,7 +35,7 @@
 </div>
 
 <div class="row">
-  <div class="col-lg-6">
+  <div class="col-md-6">
     <h4>Total Chats</h4>
     {{ graphs.line_graph(
         'chats-over-time',
@@ -44,7 +44,7 @@
         cumulative=True) }}
   </div>
 
-  <div class="col-lg-6">
+  <div class="col-md-6">
     <h4>Hardest Chatters</h4>
     {{ graphs.line_graph(
         'hardest-chatters',
@@ -56,7 +56,7 @@
 </div>
 
 <div class="row">
-  <div class="col-lg-6">
+  <div class="col-md-6">
     <h4>Humor</h4>
     {{ graphs.line_graph(
         'tnaks-over-time',
@@ -72,7 +72,7 @@
         log_scale=True) }}
   </div>
 
-  <div class="col-lg-6">
+  <div class="col-md-6">
     <h4>Reputation</h4>
     {{ graphs.line_graph(
         'rep-over-time',

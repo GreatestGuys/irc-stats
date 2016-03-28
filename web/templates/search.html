@@ -57,18 +57,16 @@
 <tbody>
 {% for ((year, month, day), i, line, prefix, match, sufix) in lines %}
 <tr>
-  <td style="">
-    {{ day }}/{{ month }}/{{ year }}
+  <td class="align-right col-sm-2 col-md-1">
+    <div class="col-md-12">
+      {{ line['nick'] }}
+    </div>
+    <div class="col-md-12 text-muted">
+      {{ month }}/{{ day }}/{{ year }}
+    </div>
   </td>
-  <td>
-    {% set (hour, minute, second) = timestamp_to_time(line['timestamp']) %}
-    {{ hour }}:{{ minute }}:{{ second }}
-  </td>
-  <td>
-    {{ line['nick'] }}
-  </td>
-  <td style="word-break: break-all; width: 100%">
-    {{ prefix }}<span class='alert-danger'>{{ match }}</span>{{ sufix }}
+  <td style="word-break: break-word; width: 100%">
+      {{ prefix }}<span class='alert-danger'>{{ match }}</span>{{ sufix }}
   </td>
   <td>
     <a href="{{ url_for(
