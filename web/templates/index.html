@@ -35,7 +35,19 @@
 </div>
 
 <div class="row">
-  <div class="col-md-6">
+
+  <div class="col-md-6 text-center">
+    <h4>Trending This Week</h4>
+    <br>
+      {% for (word, fraction) in trending %}
+        <div class="row">
+          <div class="col-xs-6 text-right"> {{ word }} </div>
+          <div class="col-xs-6 text-success text-left"> +{{ fraction }} </div>
+        </div>
+      {% endfor %}
+  </div>
+
+  <div class="col-md-6 text-center">
     <h4>Total Chats</h4>
     {{ graphs.line_graph(
         'chats-over-time',
@@ -44,7 +56,7 @@
         cumulative=True) }}
   </div>
 
-  <div class="col-md-6">
+  <div class="col-md-6 text-center">
     <h4>Hardest Chatters</h4>
     {{ graphs.line_graph(
         'hardest-chatters',
@@ -53,10 +65,8 @@
         cumulative=True,
         nick_split=True) }}
   </div>
-</div>
 
-<div class="row">
-  <div class="col-md-6">
+  <div class="col-md-6 text-center">
     <h4>Humor</h4>
     {{ graphs.line_graph(
         'tnaks-over-time',
@@ -72,13 +82,25 @@
         log_scale=True) }}
   </div>
 
-  <div class="col-md-6">
+  <div class="col-md-6 text-center">
     <h4>Reputation</h4>
     {{ graphs.line_graph(
         'rep-over-time',
         [('+1', '^\\+1\\b'), ('-1', '^-1\\b')],
         coarse=True,
         cumulative=True) }}
+  </div>
+
+  <div class="col-md-6 text-center">
+    <h4>Links / Messages</h4>
+    {{ graphs.line_graph(
+        'link-whores',
+        [('', 'https?://')],
+        coarse=True,
+        cumulative=True,
+        ignore_case=True,
+        nick_split=True,
+        normalize=True) }}
   </div>
 </div>
 {% endblock body %}

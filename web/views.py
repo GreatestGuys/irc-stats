@@ -4,11 +4,17 @@ from web import app
 from flask import Flask, url_for, render_template, g, request
 import re
 import web.logs
+import web.trending
 
 @app.route('/', methods=['GET'])
 def home():
     num_tnaks = web.logs.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
-    return render_template('index.html', num_tnaks=num_tnaks)
+    trending = []
+    for trend in web.trending.get_trending():
+      trending.append((trend[0], "%.2f" % trend[1]))
+    return render_template('index.html',
+        num_tnaks=num_tnaks,
+        trending=trending)
 
 @app.route('/query', methods=['GET'])
 def query(label=None, regexp=None, cumulative=False):
