@@ -16,7 +16,7 @@ VALID_NICKS = {
     'Graham': ['graham'],
     'Jesse': ['jesse'],
     'Will': ['will'],
-    'Zhenya': ['zhenya', 'zdog', 'swphantom'],
+    'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za'],
 }
 
 logs = None
