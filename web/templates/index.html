@@ -39,13 +39,31 @@
   <div class="col-md-6 text-center">
     <h4>Trending This Week</h4>
     <br>
-      {% for (word, fraction) in trending %}
-        <div class="row">
-          <div class="col-xs-6 text-right"> {{ word }} </div>
-          <div class="col-xs-6 text-success text-left"> +{{ fraction }} </div>
-        </div>
-      {% endfor %}
+    {% for (word, fraction) in trending %}
+      <div class="row">
+        <div class="col-xs-6 text-right"> {{ word }} </div>
+        <div class="col-xs-6 text-success text-left"> +{{ fraction }} </div>
+      </div>
+    {% endfor %}
   </div>
+
+  <div class="col-md-6 text-center">
+    <h4>Reputation</h4>
+    {{ graphs.table(
+        [
+          ('+1 Cosmo', '^\\+1 cfumo'),
+          ('+1 Graham', '^\\+1 graham'),
+          ('+1 Jesse', '^\\+1 jesse'),
+          ('+1 Will', '^\\+1 will'),
+          ('+1 Zhenya', '^\\+1 zhenya'),
+        ],
+        nick_split=True,
+        ignore_case=True) }}
+  </div>
+
+</div>
+
+<div class="row">
 
   <div class="col-md-6 text-center">
     <h4>Total Chats</h4>
@@ -80,15 +98,6 @@
         cumulative=True,
         ignore_case=True,
         log_scale=True) }}
-  </div>
-
-  <div class="col-md-6 text-center">
-    <h4>Reputation</h4>
-    {{ graphs.line_graph(
-        'rep-over-time',
-        [('+1', '^\\+1\\b'), ('-1', '^-1\\b')],
-        coarse=True,
-        cumulative=True) }}
   </div>
 
   <div class="col-md-6 text-center">

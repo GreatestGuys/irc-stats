@@ -125,7 +125,7 @@ def graph_query(queries, nick_split=False, **kwargs):
                 'values': query_logs(s, **kwargs),
             })
         else:
-            for nick in VALID_NICKS:
+            for nick in sorted(VALID_NICKS.keys()):
                 if label == '':
                     nick_label = nick
                 else:
@@ -137,14 +137,39 @@ def graph_query(queries, nick_split=False, **kwargs):
     return data
 
 @app.template_global()
+def table_query(queries, nick_split=False, order_by_total=False, **kwargs):
+    rows = [['', 'Total']]
+    if nick_split:
+        for nick in sorted(VALID_NICKS.keys()):
+            rows[0].append(nick)
+
+    tmp_rows = []
+    for (label, s) in queries:
+        row = [label]
+        row.append(count_occurrences(s, **kwargs))
+        if nick_split:
+            for nick in rows[0][2:]:
+                row.append(count_occurrences(s, nick=nick, **kwargs))
+        tmp_rows.append(row)
+
+    if order_by_total:
+        tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
+
+    rows += tmp_rows
+    return rows
+
+@app.template_global()
 @functools.lru_cache(maxsize=1000)
-def count_occurrences(s, ignore_case=False):
+def count_occurrences(s, ignore_case=False, nick=None):
     flags = ignore_case and re.IGNORECASE or 0
     try: r = re.compile(s, flags=flags)
     except: return 0
 
     total = 0
     for line in logs:
+        if nick != None and line['nick'].lower() not in VALID_NICKS[nick]:
+            continue
+
         if r.search(line['message']) != None:
             total += 1
     return total

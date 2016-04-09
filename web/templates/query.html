@@ -3,6 +3,20 @@
 {% from "query_extras.html" import query_line %}
 {% extends "layout.html" %}
 
+{% set graph_type = request.args.get('type') == 'table'
+                    and 'table'
+                    or 'graph'
+%}
+
+{% macro query_nav_item(label, type) -%}
+<li role="presentation"
+    {% if graph_type == type %}
+    class="active"
+    {% endif %} >
+  <a href="{{ modify_query(type=type) }}">{{ label }}</a>
+</li>
+{%- endmacro %}
+
 {% block head %}
 <script>
 function addTerm(parentId) {
@@ -18,17 +32,30 @@ function addTerm(parentId) {
 {% block body %}
 {% set hide_controls = request.args.get("hide_controls") %}
 {% if not hide_controls %}
+<ul class="nav nav-tabs">
+  {{ query_nav_item('Graph', 'graph') }}
+  {{ query_nav_item('Table', 'table') }}
+</ul>
+
 <form method="GET">
+  <input type="hidden" name="type" value="{{ graph_type }}" />
 	<div class="row">
 		<div class="col-lg-2">
       <h4>Options</h4>
 
+      {% if graph_type == 'graph' %}
       {{ checkbox("Cumulative", "cumulative") }}
+      {% endif %}
       {{ checkbox("Ignore Case", "ignore_case") }}
+      {% if graph_type == 'graph' %}
       {{ checkbox("Log Scale", "log_scale") }}
       {{ checkbox("Month Granularity", "coarse") }}
       {{ checkbox("Normalize", "normalize") }}
+      {% endif %}
       {{ checkbox("Split by Nick", "nick_split") }}
+      {% if graph_type == 'table' %}
+      {{ checkbox("Order By Total", "order_by_total") }}
+      {% endif %}
 
       <div class="checkbox">
         <input
@@ -92,6 +119,7 @@ function addTerm(parentId) {
 </div>
 
 <div class="row">
+{% if graph_type == 'graph' %}
   <div class="col-lg-12">
     {{ graphs.line_graph(
         'query-result',
@@ -105,5 +133,26 @@ function addTerm(parentId) {
         normalize=request.args.get('normalize'),
         zoom=True) }}
   </div>
+{% else %}
+  {% set nick_split = request.args.get('nick_split') %}
+  {% if nick_split %}
+  <div class="col-lg-12">
+  {% else %}
+  <div class="col-lg-4"></div>
+  <div class="col-lg-4">
+  {% endif %}
+    {{ graphs.table(
+        query,
+        striped=True,
+        ignore_case=request.args.get('ignore_case'),
+        nick_split=nick_split,
+        order_by_total=request.args.get('order_by_total')) }}
+  {% if nick_split %}
+  </div>
+  {% else %}
+  </div>
+  <div class="col-lg-4"></div>
+  {% endif %}
+{% endif %}
 </div>
 {% endblock body %}

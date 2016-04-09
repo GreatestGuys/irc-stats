@@ -48,3 +48,31 @@ nv.addGraph(function() {
 });
   </script>
 {%- endmacro %}
+
+{% macro table(query, striped=False, nick_split=False) -%}
+
+<table class="table {% if striped %} table-striped {% endif %}" >
+
+  {% set table_data = table_query(query, nick_split=nick_split, **kwargs) %}
+  {% if not condensed %}
+  <thead>
+    <tr>
+      <th> {{ table_data[0][0] }} </th>
+      {% for value in table_data[0][1:] %}
+      <th> {{ value }} </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  {% endif %}
+  <tbody>
+    {% for row in table_data[1:] %}
+    <tr>
+      <td> {{ row[0] }} </td>
+      {% for value in row[1:] %}
+      <td> {{ value }} </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{%- endmacro %}
