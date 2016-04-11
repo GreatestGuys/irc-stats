@@ -14,7 +14,7 @@ from flask import Flask, url_for, render_template, g
 VALID_NICKS = {
     'Cosmo': ['cosmo', 'cfumo'],
     'Graham': ['graham'],
-    'Jesse': ['jesse'],
+    'Jesse': ['jesse', 'je-c'],
     'Will': ['will'],
     'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za'],
 }
