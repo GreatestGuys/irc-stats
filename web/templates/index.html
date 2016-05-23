@@ -41,7 +41,13 @@
     <br>
     {% for (word, fraction) in trending %}
       <div class="row">
-        <div class="col-xs-6 text-right"> {{ word }} </div>
+        <div class="col-xs-6 text-right">
+          <a href="{{ url_for('search',
+                              ignore_case=True,
+                              q="\\b" + word + "\\b") }}">
+            {{ word }}
+          </a>
+        </div>
         <div class="col-xs-6 text-success text-left"> +{{ fraction }} </div>
       </div>
     {% endfor %}
