@@ -15,7 +15,7 @@ VALID_NICKS = {
     'Cosmo': ['cosmo', 'cfumo'],
     'Graham': ['graham'],
     'Jesse': ['jesse', 'je-c'],
-    'Will': ['will'],
+    'Will': ['will', 'wyll'],
     'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za'],
 }
 
