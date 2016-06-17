@@ -1,4 +1,5 @@
 {% from "extras.html" import checkbox %}
+{% import "graphs.html" as graphs %}
 {% extends "layout.html" %}
 
 {% macro page_link(page, text) -%}
@@ -26,6 +27,7 @@
 {% endmacro -%}
 
 {% block body %}
+
 <div class="row search-box">
   <form>
     <div class="col-md-10">
@@ -50,6 +52,13 @@
 </div>
 
 {% if lines != [] %}
+
+<div class="row search-box">
+  {{ graphs.bar_graph(
+      'search-histogram',
+      histogram,
+      height='200px') }}
+</div>
 
 {{ page_nav() }}
 

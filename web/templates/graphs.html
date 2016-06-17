@@ -49,8 +49,40 @@ nv.addGraph(function() {
   </script>
 {%- endmacro %}
 
-{% macro table(query, striped=False, nick_split=False) -%}
 
+{% macro bar_graph(
+    name, data,
+    width='100%', height='300px', style='') -%}
+<div id="{{ name }}" style="width:{{ width }}; height:{{ height }}; {{ style }}">
+    <svg style="width:100%; height:100%"></svg>
+  </div>
+  <script>
+nv.addGraph(function() {
+  var chart = nv.models.multiBarChart()
+      .showLegend(false)
+      .showControls(false);
+
+  chart.xAxis
+      .tickFormat(function(d) {
+        return d3.time.format('%x')(new Date(d * 1000))
+      });
+
+  chart.yAxis.tickFormat(d3.format(',d'));
+
+  d3.select('#{{ name }} svg')
+      .datum({{ data | tojson }})
+      .transition().duration(500)
+      .call(chart);
+
+  nv.utils.windowResize(chart.update);
+
+  return chart;
+});
+  </script>
+{%- endmacro %}
+
+
+{% macro table(query, striped=False, nick_split=False) -%}
 <table class="table {% if striped %} table-striped {% endif %}" >
 
   {% set table_data = table_query(query, nick_split=nick_split, **kwargs) %}

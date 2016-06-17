@@ -183,6 +183,26 @@ def get_valid_days():
     return sorted(get_logs_by_day().keys())
 
 @functools.lru_cache(maxsize=1)
+def get_all_days():
+    """
+    Return a list of (year, month, day) tuples between the starting and end date
+    even if there is no data.
+    """
+    def to_datetime(day):
+        return datetime.datetime.fromtimestamp(float(time.mktime(
+                datetime.datetime(day[0], day[1], day[2]).timetuple())))
+
+    days = get_valid_days()
+    current_time = to_datetime(days[0])
+    end_time = to_datetime(days[-1])
+    days = []
+    while current_time <= end_time:
+        days.append((current_time.year, current_time.month, current_time.day))
+        current_time += datetime.timedelta(days=1)
+    return days
+
+
+@functools.lru_cache(maxsize=1)
 def get_logs_by_day():
     """
     Return a map from (year, month, day) tuples to log lines occurring on that
@@ -217,3 +237,24 @@ def search_day_logs(s, ignore_case=False):
                 results.append((day, index, line, m.start(), m.end()))
             index += 1
     return results
+
+@functools.lru_cache(maxsize=1000)
+def search_results_to_chart(s, ignore_case=False):
+    results = search_day_logs(s, ignore_case)
+
+    def get_key(day):
+        return time.mktime(
+                datetime.datetime(day[0], day[1], 1).timetuple())
+
+    counts = {}
+    for day in get_all_days():
+        key = get_key(day)
+        counts[key] = {'x': key, 'y': 0}
+    for r in results:
+        day = r[0]
+        counts[get_key(day)]['y'] += 1
+
+    return [{
+            'key': '',
+            'values': sorted(counts.values(), key=lambda x: x['x'])
+        }]

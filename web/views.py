@@ -94,6 +94,7 @@ def browse_day(year, month, day):
 def search():
     LINES_PER_PAGE = 25
     lines = []
+    histogram = []
 
     start = 0
     end = 0
@@ -102,6 +103,8 @@ def search():
     ignore_case = request.args.get('ignore_case', False, type=bool)
     if query:
         lines = web.logs.search_day_logs(query, ignore_case=ignore_case)
+        histogram = web.logs.search_results_to_chart(
+            query, ignore_case=ignore_case)
 
     total_lines = len(lines)
     if lines:
@@ -123,4 +126,5 @@ def search():
     return render_template('search.html',
             start=(start + 1), end=end,
             lines=lines, total_lines=total_lines,
+            histogram=histogram,
             next_page=next_page, prev_page=prev_page)
