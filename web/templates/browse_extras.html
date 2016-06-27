@@ -5,7 +5,7 @@
     <h4> {{ month_name(month) }} </h4>
     <div class="month-row">
 
-    {% for i in range(0, offset + 1) %}
+    {% for i in range(0, (offset + 1) % 7) %}
       <div class="month-cell"></div>
     {% endfor %}
 
