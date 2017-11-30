@@ -57,13 +57,13 @@
     <h4>Reputation</h4>
     {{ graphs.table(
         [
-          ('+1 Cosmo', '^\\+1 cfumo'),
-          ('+1 Graham', '^\\+1 graham'),
-          ('+1 Jesse', '^\\+1 jesse'),
-          ('+1 Will', '^\\+1 will'),
-          ('+1 Zhenya', '^\\+1 zhenya'),
-          ('+1 manatee', '^\\+1 manatee'),
-          ('+1 mindmeld', '^\\+1 mindmeld'),
+          ('+1 Cosmo', '^((\\+1 |\\+\\+)cfumo|cfumo\\+\\+)'),
+          ('+1 Graham', '^((\\+1 |\\+\\+)graham|graham\\+\\+)'),
+          ('+1 Jesse', '^((\\+1 |\\+\\+)jesse|jesse\\+\\+)'),
+          ('+1 Will', '^((\\+1 |\\+\\+)w[iy]ll|w[iy]ll\\+\\+)'),
+          ('+1 Zhenya', '^((\\+1 |\\+\\+)zhenya|zhenya\\+\\+)'),
+          ('+1 manatee', '^((\\+1 |\\+\\+)manatee|manatee\\+\\+)'),
+          ('+1 mindmeld', '^((\\+1 |\\+\\+)mindmeld|mindmeld\\+\\+)'),
         ],
         nick_split=True,
         ignore_case=True) }}
