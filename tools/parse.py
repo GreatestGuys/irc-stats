@@ -128,8 +128,18 @@ def parse_weechat(f):
             make_is_regexp(r'^%s\s+\*\*\*\s+Playback Complete' % date_re),
             parse_chat)
 
+def parse_ggircd(f):
+    def parse_chat(line):
+        message = json.loads(line)
+        return (int(message['timestamp']), message['nick'], message['message'])
+    return parse_generic(
+            f,
+            lambda x: False,
+            lambda x: False,
+            parse_chat)
+
 def print_usage():
-    sys.stderr.write('usage: parse.py [irssi|weechat]\n')
+    sys.stderr.write('usage: parse.py [irssi|weechat|ggircd]\n')
     exit(1)
 
 def print_messages(messages):
@@ -143,6 +153,8 @@ if log_type == 'irssi':
     parser = parse_irssi
 elif log_type == 'weechat':
     parser = parse_weechat
+elif log_type == 'ggircd':
+    parser = parse_ggircd
 else:
     print_usage()
 
