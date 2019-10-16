@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # Parse a IRC log file and print a JSON formatted form to STDOUT.
@@ -143,7 +143,7 @@ def print_usage():
     exit(1)
 
 def print_messages(messages):
-    print json.dumps(messages, indent=2, sort_keys=True)
+    print(json.dumps(messages, indent=2, sort_keys=True))
 
 if len(sys.argv) != 2:
     print_usage()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # Merge multiple JSON IRC logs into a single monolithic JSON log.
@@ -11,7 +11,7 @@ def print_usage():
     exit(1)
 
 def print_messages(messages):
-    print json.dumps(messages, indent=2, sort_keys=True)
+    print(json.dumps(messages, indent=2, sort_keys=True))
 
 def parse_file(path):
   with open(path, 'r') as f:
