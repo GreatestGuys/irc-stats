@@ -13,10 +13,10 @@ from flask import Flask, url_for, render_template, g
 
 VALID_NICKS = {
     'Cosmo': ['cosmo', 'cfumo'],
-    'Graham': ['graham'],
+    'Graham': ['graham', 'jorgon'],
     'Jesse': ['jesse', 'je-c'],
-    'Will': ['will', 'wyll'],
-    'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za'],
+    'Will': ['will', 'wyll', 'wyll_'],
+    'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za', 'zhenya2'],
 }
 
 logs = None
