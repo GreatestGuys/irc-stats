@@ -1,5 +1,6 @@
 {% import "graphs.html" as graphs %}
 {% from "extras.html" import checkbox %}
+{% from "extras.html" import radios %}
 {% from "query_extras.html" import query_line %}
 {% extends "layout.html" %}
 
@@ -51,6 +52,17 @@ function addTerm(parentId) {
       {{ checkbox("Log Scale", "log_scale") }}
       {{ checkbox("Month Granularity", "coarse") }}
       {{ checkbox("Normalize", "normalize") }}
+      <div class="sub-checks">
+        {{ radios("normalize_type", [
+          ("Raw", "raw"),
+          ("6 Pt Trailing Avg", "trailing_avg_6"),
+          ("12 Pt Trailing Avg", "trailing_avg_12"),
+          ("30 Pt Trailing Avg", "trailing_avg_30"),
+          ("60 Pt Trailing Avg", "trailing_avg_60"),
+          ("90 Pt Trailing Avg", "trailing_avg_90"),
+          ("180 Pt Trailing Avg", "trailing_avg_180"),
+        ]) }}
+      </div>
       {% endif %}
       {{ checkbox("Split by Nick", "nick_split") }}
       {% if graph_type == 'table' %}
@@ -131,6 +143,7 @@ function addTerm(parentId) {
         log_scale=request.args.get('log_scale'),
         nick_split=request.args.get('nick_split'),
         normalize=request.args.get('normalize'),
+        normalize_type=request.args.get('normalize_type'),
         zoom=True) }}
   </div>
 {% else %}

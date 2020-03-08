@@ -8,3 +8,19 @@
 </div>
 {%- endmacro %}
 
+{% macro radios(name, buttons) -%}
+<div class="checkbox">
+  {% for (label, value) in buttons %}
+  <label>
+    <input
+        type="radio"
+        id="{{ value }}"
+        value="{{ value }}"
+        name="{{ name }}"
+        {% if loop.first and not request.args.get(name) %} checked {% endif %}
+        {% if request.args.get(name) == value %} checked {% endif %} />
+    {{ label }}
+  </label>
+  {% endfor %}
+</div>
+{%- endmacro %}

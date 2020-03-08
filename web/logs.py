@@ -32,7 +32,7 @@ def init_logs():
 @functools.lru_cache(maxsize=1000)
 def query_logs(s,
         cumulative=False, coarse=False, nick=None, ignore_case=False,
-        normalize=False):
+        normalize=False, normalize_type=None):
     """
     Query logs for a given regular expression and return a time series of the
     number of occurrences of lines matching the regular expression per day.
@@ -104,14 +104,30 @@ def query_logs(s,
             smoothed[key] = {'x': key, 'y': value}
 
     if normalize and total_matched > 0:
+        total_window = []
+        matched_window = []
         for key in smoothed:
+            total_window.append(key in totals and totals[key]['y'] or 0)
+            matched_window.append(smoothed[key]['y'])
+            if str(normalize_type or '').startswith('trailing_avg_'):
+                window_size = int(normalize_type[13:])
+                total_window = total_window[0 - window_size:]
+                matched_window = matched_window[0 - window_size:]
+            else:
+                total_window = total_window[-1:]
+                matched_window = matched_window[-1:]
+
             if cumulative:
                 if totals[key]['y'] == 0:
                     smoothed[key]['y'] = 0
                 else:
                     smoothed[key]['y'] /= totals[key]['y']
             else:
-                smoothed[key]['y'] /= key in totals and totals[key]['y'] or 1
+                if sum(total_window) == 0:
+                    smoothed[key]['y'] = 0
+                else:
+                    smoothed[key]['y'] = (
+                        sum(matched_window) / sum(total_window))
 
     return sorted(smoothed.values(), key=lambda x: x['x'])
 
