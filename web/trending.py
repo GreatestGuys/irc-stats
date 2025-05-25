@@ -52,7 +52,7 @@ def get_trending(top=10, min_freq=10, lookback_days=7):
     Return a list of the top trending terms. The values of the list will be
     tuples of the word along with the relative fractional increase in usage.
     """
-    logs = web.logs.log_query_engine.get_all_log_entries()
+    logs = web.logs.logs
     recent_logs = slice_logs(logs)
 
     all_freqs = word_freqs(logs)
