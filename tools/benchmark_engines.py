@@ -144,7 +144,7 @@ def main():
         "InMemory": InMemoryLogQueryEngine,
         "SQLite": SQLiteLogQueryEngine
     }
-    
+
     all_run_results = [] # Store results from every single run
 
     base_seed = random.randint(1, 10000) # Use a base seed to make multiple script executions somewhat varied but internally consistent
@@ -152,7 +152,7 @@ def main():
     for size_idx, size in enumerate(dataset_sizes):
         dataset_seed = base_seed + size_idx # Unique seed for each dataset size
         temp_data_file = f"{args.temp_data_file_prefix}_{size}.json"
-        
+
         if not generate_dataset(size, args.data_gen_script, temp_data_file, dataset_seed):
             print(f"Skipping benchmark for dataset size {size} due to generation error.", file=sys.stderr)
             continue
@@ -160,7 +160,7 @@ def main():
         try:
             for engine_name, EngineClass in engine_classes.items():
                 print(f"\nBenchmarking {engine_name} with dataset size {size} (File: {temp_data_file})")
-                
+
                 for run_num in range(1, args.runs_per_test + 1):
                     print(f"  Run {run_num}/{args.runs_per_test} for {engine_name} on {size} entries...")
 
@@ -168,7 +168,7 @@ def main():
                     print(f"    Benchmarking startup...")
                     tracemalloc.start() # Start tracing for instantiation
                     startup_t_start = time.perf_counter()
-                    
+
                     current_engine = None # Define before try block
                     try:
                         if engine_name == "SQLite":
@@ -200,11 +200,11 @@ def main():
                             if query_def["name"] == "startup": continue # Already handled
 
                             print(f"    Benchmarking query: {query_def['name']}...")
-                            
+
                             # Clear caches for InMemory engine before each query test
                             if isinstance(current_engine, InMemoryLogQueryEngine):
                                 current_engine.clear_all_caches()
-                            
+
                             try:
                                 q_time, q_peak_mem = run_single_test(current_engine, query_def["method_to_call"], query_def["query_args"])
                                 all_run_results.append({
@@ -218,11 +218,11 @@ def main():
                                 print(f"      Query {query_def['name']}: time={q_time:.4f}s, peak_mem={q_peak_mem / (1024*1024):.2f}MB")
                             except Exception as e:
                                 print(f"      ERROR running query {query_def['name']} for {engine_name}: {e}", file=sys.stderr)
-                        
+
                         # Cleanup engine instance after all queries for this run
                         del current_engine
                         current_engine = None
-                        gc.collect() 
+                        gc.collect()
 
         finally:
             if os.path.exists(temp_data_file):
@@ -231,7 +231,7 @@ def main():
                     os.remove(temp_data_file)
                 except OSError as e:
                     print(f"Error removing temporary file {temp_data_file}: {e}", file=sys.stderr)
-    
+
     # Aggregate results
     print("\nAggregating results...")
     aggregated_results = {}
@@ -254,7 +254,7 @@ def main():
             "avg_peak_memory_bytes": avg_mem,
             "runs": len(data["times"])
         })
-    
+
     # Sort final results for consistent output
     final_results_summary.sort(key=lambda x: (x["dataset_size"], x["engine"], x["operation"]))
 
@@ -265,6 +265,50 @@ def main():
         print(f"Benchmark results saved to {args.output_results_file}")
     except IOError as e:
         print(f"Error writing results to file: {e}", file=sys.stderr)
+
+    # Print the summary
+    print_summary(final_results_summary)
+
+def print_summary(results):
+    """Prints an easy-to-read summary of the benchmark results."""
+    print("\n--- Benchmark Summary ---")
+
+    # Group results by dataset size
+    results_by_size = {}
+    for r in results:
+        size = r["dataset_size"]
+        if size not in results_by_size:
+            results_by_size[size] = []
+        results_by_size[size].append(r)
+
+    for size in sorted(results_by_size.keys()):
+        print(f"\nDataset Size: {size} entries")
+        print(f"{'Operation':<30} {'InMemory Time (s)':<20} {'SQLite Time (s)':<20} {'Time Delta (%)':<18} {'InMemory Mem (MB)':<20} {'SQLite Mem (MB)':<20} {'Mem Delta (%)':<18}")
+        print(f"{'-'*30:<30} {'-'*20:<20} {'-'*20:<20} {'-'*18:<18} {'-'*20:<20} {'-'*20:<20} {'-'*18:<18}")
+
+        # Group by operation within each size to easily compare engines
+        operations_data = {}
+        for r in results_by_size[size]:
+            operation = r["operation"]
+            if operation not in operations_data:
+                operations_data[operation] = {}
+            operations_data[operation][r["engine"]] = r
+
+        for operation in sorted(operations_data.keys()):
+            inmemory_res = operations_data[operation].get("InMemory")
+            sqlite_res = operations_data[operation].get("SQLite")
+
+            inmemory_time = inmemory_res["avg_time_seconds"] if inmemory_res else 0
+            inmemory_mem = (inmemory_res["avg_peak_memory_bytes"] / (1024 * 1024)) if inmemory_res else 0
+            sqlite_time = sqlite_res["avg_time_seconds"] if sqlite_res else 0
+            sqlite_mem = (sqlite_res["avg_peak_memory_bytes"] / (1024 * 1024)) if sqlite_res else 0
+
+            time_delta_percent = ((sqlite_time - inmemory_time) / inmemory_time * 100) if inmemory_time != 0 else float('inf')
+            mem_delta_percent = ((sqlite_mem - inmemory_mem) / inmemory_mem * 100) if inmemory_mem != 0 else float('inf')
+
+            print(f"{operation:<30} {inmemory_time:<20.4f} {sqlite_time:<20.4f} {time_delta_percent:<18.2f} {inmemory_mem:<20.2f} {sqlite_mem:<20.2f} {mem_delta_percent:<18.2f}")
+    print("\n-------------------------")
+
 
 if __name__ == "__main__":
     main()
