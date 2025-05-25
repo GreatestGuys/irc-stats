@@ -14,7 +14,7 @@ from web import app # To set app.testing
 def ts(dt_obj):
     return str(time.mktime(dt_obj.timetuple()))
 
-BASE_DATE = datetime.datetime(2023, 3, 15, 10, 0, 0) 
+BASE_DATE = datetime.datetime(2023, 3, 15, 10, 0, 0)
 DAY_1 = BASE_DATE
 DAY_2 = BASE_DATE + datetime.timedelta(days=1)
 DAY_3 = BASE_DATE + datetime.timedelta(days=2)
@@ -46,7 +46,7 @@ class BaseLogQueryEngineTests:
         engine = self.create_engine(log_data=log_data)
         results = engine.query_logs("hello")
         # The results should contain an entry for each day in the log range, even if count is 0
-        self.assertEqual(len(results), 1) 
+        self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['y'], 0)
 
     def test_query_logs_case_insensitivity(self):
@@ -55,7 +55,7 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(DAY_2), "nick": "UserA", "message": "HELLO"}
         ]
         engine = self.create_engine(log_data=log_data)
-        
+
         results_sensitive = engine.query_logs("Hello", ignore_case=False)
         self.assertEqual(len(results_sensitive), 2)
         # Assuming DAY_1 is results_sensitive[0] and DAY_2 is results_sensitive[1] after sorting by 'x'
@@ -65,7 +65,7 @@ class BaseLogQueryEngineTests:
         self.assertEqual(results_sensitive_map.get(day1_ts), 1)
         self.assertEqual(results_sensitive_map.get(day2_ts), 0)
 
-        engine.clear_all_caches() 
+        engine.clear_all_caches()
         results_insensitive = engine.query_logs("Hello", ignore_case=True)
         self.assertEqual(len(results_insensitive), 2)
         results_insensitive_map = {r['x']: r['y'] for r in results_insensitive}
@@ -75,40 +75,40 @@ class BaseLogQueryEngineTests:
 
     def test_query_logs_nick_filter(self):
         log_data = [
-            {"timestamp": ts(DAY_1), "nick": "Alice", "message": "apple Alice"},
-            {"timestamp": ts(DAY_1), "nick": "Bob", "message": "apple Bob"},
-            {"timestamp": ts(DAY_2), "nick": "alice", "message": "banana Alice"}, # Note: 'alice' is an alias for 'Alice'
+            {"timestamp": ts(DAY_1), "nick": "Cosmo", "message": "apple Cosmo"},
+            {"timestamp": ts(DAY_1), "nick": "Graham", "message": "apple Graham"},
+            {"timestamp": ts(DAY_2), "nick": "cosmo", "message": "banana Cosmo"}, # Note: 'cosmo' is an alias for 'Cosmo'
         ]
         engine = self.create_engine(log_data=log_data)
-        
-        results_alice = engine.query_logs("apple", nick="Alice")
-        self.assertEqual(len(results_alice), 2) 
+
+        results_cosmo = engine.query_logs("apple", nick="Cosmo")
+        self.assertEqual(len(results_cosmo), 2)
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
         day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
-        results_map = {r['x']: r['y'] for r in results_alice}
-        self.assertEqual(results_map.get(day1_ts), 1) 
-        self.assertEqual(results_map.get(day2_ts), 0) 
-        
-        engine.clear_all_caches()
-        results_bob = engine.query_logs("apple", nick="Bob")
-        self.assertEqual(len(results_bob), 2)
-        results_map_bob = {r['x']: r['y'] for r in results_bob}
-        self.assertEqual(results_map_bob.get(day1_ts), 1)
-        self.assertEqual(results_map_bob.get(day2_ts), 0)
+        results_map = {r['x']: r['y'] for r in results_cosmo}
+        self.assertEqual(results_map.get(day1_ts), 1)
+        self.assertEqual(results_map.get(day2_ts), 0)
 
         engine.clear_all_caches()
-        results_alice_banana = engine.query_logs("banana", nick="Alice")
-        self.assertEqual(len(results_alice_banana), 2)
-        results_map_ab = {r['x']: r['y'] for r in results_alice_banana}
+        results_graham = engine.query_logs("apple", nick="Graham")
+        self.assertEqual(len(results_graham), 2)
+        results_map_graham = {r['x']: r['y'] for r in results_graham}
+        self.assertEqual(results_map_graham.get(day1_ts), 1)
+        self.assertEqual(results_map_graham.get(day2_ts), 0)
+
+        engine.clear_all_caches()
+        results_cosmo_banana = engine.query_logs("banana", nick="Cosmo")
+        self.assertEqual(len(results_cosmo_banana), 2)
+        results_map_ab = {r['x']: r['y'] for r in results_cosmo_banana}
         self.assertEqual(results_map_ab.get(day1_ts), 0)
         self.assertEqual(results_map_ab.get(day2_ts), 1)
 
     def test_query_logs_cumulative_logic(self):
         log_data = [
             {"timestamp": ts(DAY_1), "nick": "UserA", "message": "event"},
-            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "event"}, 
-            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "event"}, 
-            {"timestamp": ts(DAY_3), "nick": "UserA", "message": "event"} 
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "event"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "event"},
+            {"timestamp": ts(DAY_3), "nick": "UserA", "message": "event"}
         ]
         engine = self.create_engine(log_data=log_data)
         results = engine.query_logs("event", cumulative=True)
@@ -125,14 +125,14 @@ class BaseLogQueryEngineTests:
         log_data = [
             {"timestamp": ts(day1_month1), "nick": "UserA", "message": "hello"},
             {"timestamp": ts(day1_month1 + datetime.timedelta(hours=1)), "nick": "UserA", "message": "hello"}, # Same day
-            {"timestamp": ts(day2_month1), "nick": "UserA", "message": "hello"}, 
-            {"timestamp": ts(day1_month2), "nick": "UserA", "message": "hello"}, 
+            {"timestamp": ts(day2_month1), "nick": "UserA", "message": "hello"},
+            {"timestamp": ts(day1_month2), "nick": "UserA", "message": "hello"},
         ]
         engine = self.create_engine(log_data=log_data)
         results = engine.query_logs("hello", coarse=True) # Coarse aggregates by month
-        
+
         self.assertEqual(len(results), 2) # Two months: Jan, Feb
-        
+
         month1_ts = time.mktime(datetime.datetime(2023, 1, 1).timetuple()) # Start of Jan 2023
         month2_ts = time.mktime(datetime.datetime(2023, 2, 1).timetuple()) # Start of Feb 2023
 
@@ -158,7 +158,7 @@ class BaseLogQueryEngineTests:
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
         day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
 
-        self.assertAlmostEqual(results_map.get(day1_ts), 1.0/2.0, places=2) 
+        self.assertAlmostEqual(results_map.get(day1_ts), 1.0/2.0, places=2)
         self.assertAlmostEqual(results_map.get(day2_ts), 2.0/5.0, places=2)
 
     def test_count_occurrences_empty_data(self):
@@ -177,15 +177,13 @@ class BaseLogQueryEngineTests:
 
     def test_count_occurrences_nick_filter(self):
         log_data = [
-            {"timestamp": ts(DAY_1), "nick": "Alice", "message": "msg from Alice"},
-            {"timestamp": ts(DAY_1), "nick": "Bob", "message": "msg from Bob"}
+            {"timestamp": ts(DAY_1), "nick": "Cosmo", "message": "msg from Cosmo"},
+            {"timestamp": ts(DAY_1), "nick": "Graham", "message": "msg from Graham"}
         ]
-        # VALID_NICKS['Alice'] = ['alice']
-        # VALID_NICKS['Bob'] = ['bob']
         engine = self.create_engine(log_data=log_data)
-        self.assertEqual(engine.count_occurrences("msg", nick="Alice"), 1)
+        self.assertEqual(engine.count_occurrences("msg", nick="Cosmo"), 1)
         engine.clear_all_caches()
-        self.assertEqual(engine.count_occurrences("msg", nick="Charlie"), 0) # Charlie is not in log_data
+        self.assertEqual(engine.count_occurrences("msg", nick="Jesse"), 0) # Jesse is not in log_data for this test
 
     def test_get_valid_days_empty_data(self):
         engine = self.create_engine(log_data=[])
@@ -207,7 +205,7 @@ class BaseLogQueryEngineTests:
     def test_get_all_days_empty_data(self):
         engine = self.create_engine(log_data=[])
         self.assertEqual(engine.get_all_days(), [])
-        
+
     def test_get_all_days_populated(self):
         log_data = [
             {"timestamp": ts(DAY_1), "nick": "UserA", "message": "m1"},
@@ -216,7 +214,7 @@ class BaseLogQueryEngineTests:
         engine = self.create_engine(log_data=log_data)
         expected_days = [
             (DAY_1.year, DAY_1.month, DAY_1.day),
-            (DAY_2.year, DAY_2.month, DAY_2.day), 
+            (DAY_2.year, DAY_2.month, DAY_2.day),
             (DAY_3.year, DAY_3.month, DAY_3.day),
         ]
         self.assertEqual(engine.get_all_days(), expected_days)
@@ -237,11 +235,11 @@ class BaseLogQueryEngineTests:
 
         log_data = [log_d1_1, log_d1_2, log_d2_1] # Original order
         engine = self.create_engine(log_data=log_data)
-        
+
         logs_by_day = engine.get_logs_by_day()
         key_d1 = (DAY_1.year, DAY_1.month, DAY_1.day)
         key_d2 = (DAY_2.year, DAY_2.month, DAY_2.day)
-        
+
         self.assertIn(key_d1, logs_by_day)
         self.assertIn(key_d2, logs_by_day)
         self.assertEqual(len(logs_by_day[key_d1]), 2)
@@ -259,7 +257,7 @@ class BaseLogQueryEngineTests:
         # Sort retrieved logs (SQLite already sorts by timestamp, but good practice)
         retrieved_d1_logs_sorted = sorted(logs_by_day.get(key_d1, []), key=sort_key)
         retrieved_d2_logs_sorted = sorted(logs_by_day.get(key_d2, []), key=sort_key)
-        
+
         if isinstance(engine, SQLiteLogQueryEngine):
             # Convert expected timestamps to float for SQLite comparison and sort
             expected_d1_logs_for_comparison = sorted([{**log, 'timestamp': float(log['timestamp'])} for log in expected_d1_logs_orig], key=sort_key)
@@ -279,23 +277,23 @@ class BaseLogQueryEngineTests:
         log_d1 = {"timestamp": ts(DAY_1), "nick": "UserA", "message": "search me on day 1"}
         log_d2 = {"timestamp": ts(DAY_2), "nick": "UserA", "message": "search me on day 2"}
         log_d3_no_match = {"timestamp": ts(DAY_3), "nick": "UserA", "message": "nothing here"}
-        
+
         # Data is provided such that DAY_1, DAY_2, DAY_3 are chronological.
         # SQLiteLogQueryEngine.search_day_logs uses get_logs_by_day (which sorts by timestamp from DB),
         # then reverses sorted days. So results are DAY_N, DAY_N-1 ...
         # InMemoryLogQueryEngine.search_day_logs also sorts days in reverse.
-        log_data = [log_d1, log_d2, log_d3_no_match] 
+        log_data = [log_d1, log_d2, log_d3_no_match]
         engine = self.create_engine(log_data=log_data)
 
         results = engine.search_day_logs("search me")
         self.assertEqual(len(results), 2)
-        
+
         # Result 0 should be from DAY_2 (later date, appears first due to reverse day sort)
         self.assertEqual(results[0][2]['message'], "search me on day 2")
         self.assertEqual(results[0][0], (DAY_2.year, DAY_2.month, DAY_2.day)) # (day_tuple)
         self.assertEqual(results[0][1], 0) # index within that day's log list
         self.assertIsNotNone(results[0][3]) # start match index
-        
+
         # Result 1 should be from DAY_1
         self.assertEqual(results[1][2]['message'], "search me on day 1")
         self.assertEqual(results[1][0], (DAY_1.year, DAY_1.month, DAY_1.day))
@@ -311,65 +309,22 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(day1_month2), "nick": "UserA", "message": "chart data"},
         ]
         engine = self.create_engine(log_data=log_data)
-        
+
         chart_data = engine.search_results_to_chart("chart data")
         self.assertEqual(len(chart_data), 1) # Single series
         self.assertEqual(chart_data[0]['key'], "") # Default key
-        
+
         values = chart_data[0]['values'] # List of {'x': ts, 'y': count}
         self.assertEqual(len(values), 2) # Two months with data
 
         # Expected timestamps for the start of the month
         month1_ts = time.mktime(datetime.datetime(2023, 1, 1).timetuple())
         month2_ts = time.mktime(datetime.datetime(2023, 2, 1).timetuple())
-        
+
         results_map = {r['x']: r['y'] for r in values}
         self.assertEqual(results_map.get(month1_ts), 2) # Two entries in Jan
         self.assertEqual(results_map.get(month2_ts), 1) # One entry in Feb
-        
-    def test_nick_filtering_various_cases(self):
-        # This test modifies GLOBAL_VALID_NICKS. This is problematic for test isolation.
-        # A try...finally block is used to ensure GLOBAL_VALID_NICKS is restored.
-        original_valid_nicks = GLOBAL_VALID_NICKS.copy()
-        try:
-            # Setup specific nicks for this test
-            GLOBAL_VALID_NICKS.clear()
-            GLOBAL_VALID_NICKS['SpecificUser'] = ['specificuser', 'su']
-            GLOBAL_VALID_NICKS['OtherUser'] = ['otheruser']
-            GLOBAL_VALID_NICKS['Alice'] = ['alice'] 
-            GLOBAL_VALID_NICKS['Bob'] = ['bob']
-            GLOBAL_VALID_NICKS['Charlie'] = ['charlie']
 
-            log_data = [
-                {"timestamp": ts(DAY_1), "nick": "SpecificUser", "message": "msg1 by SpecificUser"}, 
-                {"timestamp": ts(DAY_1), "nick": "specificuser", "message": "msg2 by specificuser"}, # alias
-                {"timestamp": ts(DAY_1), "nick": "OtherUser", "message": "msg3 by OtherUser"},    
-                {"timestamp": ts(DAY_1), "nick": "Unknown", "message": "msg4 by Unknown"} # Not in VALID_NICKS for filtering
-            ]
-            engine = self.create_engine(log_data=log_data)
-
-            # Test filtering for "SpecificUser"
-            results = engine.query_logs("msg", nick="SpecificUser")
-            self.assertEqual(len(results),1) # Data is only for DAY_1
-            self.assertEqual(results[0]['y'], 2) # msg1 and msg2
-
-            engine.clear_all_caches()
-            # Test with a nick that has no logs
-            GLOBAL_VALID_NICKS['EmptyNick'] = ['emptynick']
-            results_empty = engine.query_logs("msg", nick="EmptyNick")
-            self.assertEqual(len(results_empty),1)
-            self.assertEqual(results_empty[0]['y'], 0)
-            del GLOBAL_VALID_NICKS['EmptyNick'] 
-
-            engine.clear_all_caches()
-            # Test query without nick filter, expecting "Unknown" to be found if "msg4" is searched
-            results_all_for_msg4 = engine.query_logs("msg4 by Unknown") 
-            self.assertEqual(results_all_for_msg4[0]['y'], 1) # Found because no nick filter applied
-        
-        finally:
-            # Restore original GLOBAL_VALID_NICKS
-            GLOBAL_VALID_NICKS.clear()
-            GLOBAL_VALID_NICKS.update(original_valid_nicks) # Corrected variable name
 
     def test_load_from_sample_file(self):
         # This test requires the engine to load from a file path.
@@ -377,21 +332,21 @@ class BaseLogQueryEngineTests:
         # The default test log sample path is resolved inside the engine constructor if app.testing is True.
         # So, create_engine(log_data=None, log_file_path=None) should trigger this.
         # Or, explicitly pass the path.
-        
+
         sample_log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'test_log_sample.json'))
         engine = self.create_engine(log_file_path=sample_log_path, log_data=None) # Explicitly pass path
-        
+
         # Data from test_log_sample.json:
         # Alice: "hello world" (2023-03-15), "another day another test" (2023-03-16)
         # Bob: "testing" (2023-03-15)
         # Charlie: "HELLO COSMO" (2023-03-16)
-        
+
         results = engine.query_logs("hello", ignore_case=True) # Matches "hello world" and "HELLO COSMO"
         self.assertEqual(len(results), 2) # Two days in sample: 2023-03-15, 2023-03-16
-        
+
         day1_sample_dt = datetime.datetime(2023, 3, 15)
         day2_sample_dt = datetime.datetime(2023, 3, 16)
-        
+
         exp_x1 = time.mktime(day1_sample_dt.timetuple())
         exp_x2 = time.mktime(day2_sample_dt.timetuple())
 

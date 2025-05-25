@@ -1,6 +1,6 @@
 [
-  {"timestamp": "1678886400", "nick": "Alice", "message": "hello world"},
-  {"timestamp": "1678886460", "nick": "Bob", "message": "testing"},
-  {"timestamp": "1678972800", "nick": "Alice", "message": "another day another test"},
-  {"timestamp": "1678972860", "nick": "Charlie", "message": "HELLO COSMO"}
+  {"timestamp": "1678886400", "nick": "zhenya", "message": "hello world"},
+  {"timestamp": "1678886460", "nick": "will", "message": "testing"},
+  {"timestamp": "1678972800", "nick": "wyll", "message": "another day another test"},
+  {"timestamp": "1678972860", "nick": "cosmo", "message": "HELLO COSMO"}
 ]
