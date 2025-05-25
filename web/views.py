@@ -3,12 +3,12 @@
 from web import app
 from flask import Flask, url_for, render_template, g, request
 import re
-import web.logs
+from web.logs import log_engine
 import web.trending
 
 @app.route('/', methods=['GET'])
 def home():
-    num_tnaks = web.logs.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
+    num_tnaks = log_engine.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
     trending = []
     for trend in web.trending.get_trending():
       trending.append((trend[0], "%.2f" % trend[1]))
@@ -38,13 +38,13 @@ def query(label=None, regexp=None, cumulative=False):
 
 @app.route('/browse', methods=['GET'])
 def browse():
-    return render_template('browse.html', valid_days=web.logs.get_valid_days())
+    return render_template('browse.html', valid_days=log_engine.get_valid_days())
 
 @app.route('/browse/<int:year>/<int:month>/<int:day>', methods=['GET'])
 def browse_day(year, month, day):
     r = re.compile('(https?://\\S+)', flags=re.IGNORECASE)
 
-    day_logs = web.logs.get_logs_by_day()
+    day_logs = log_engine.get_logs_by_day()
     key = (year, month, day)
     prev_day = None
     next_day = None
@@ -102,8 +102,8 @@ def search():
     page = request.args.get('p', 0, type=int)
     ignore_case = request.args.get('ignore_case', False, type=bool)
     if query:
-        lines = web.logs.search_day_logs(query, ignore_case=ignore_case)
-        histogram = web.logs.search_results_to_chart(
+        lines = log_engine.search_day_logs(query, ignore_case=ignore_case)
+        histogram = log_engine.search_results_to_chart(
             query, ignore_case=ignore_case)
 
     total_lines = len(lines)
