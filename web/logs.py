@@ -8,25 +8,25 @@ import os
 import re
 import time
 
-from web import app, APP_STATIC 
-from flask import Flask, url_for, render_template, g 
+from web import app, APP_STATIC # app for decorators, APP_STATIC for default path
 
 class LogQueryEngine:
-    VALID_NICKS = {
-        'Cosmo': ['cosmo', 'cfumo'],
-        'Graham': ['graham', 'jorgon'],
-        'Jesse': ['jesse', 'je-c'],
-        'Will': ['will', 'wyll', 'wyll_'],
-        'Zhenya': ['zhenyah', 'zhenya', 'zdog', 'swphantom', 'za', 'zhenya2'],
+    VALID_NICKS = { # Original VALID_NICKS, now a class attribute
+        "Cosmo": ["cosmo", "cfumo"],
+        "Graham": ["graham", "jorgon"],
+        "Jesse": ["jesse", "je-c"],
+        "Will": ["will", "wyll", "wyll_"],
+        "Zhenya": ["zhenyah", "zhenya", "zdog", "swphantom", "za", "zhenya2"],
     }
 
     def __init__(self, log_file_path=None):
         if log_file_path is None:
-            log_file_path = os.path.join(APP_STATIC, 'log.json')
+            log_file_path = os.path.join(APP_STATIC, "log.json")
         
         self.logs = []
         try:
-            with open(log_file_path, 'r') as f:
+            # This logic is from the original init_logs()
+            with open(log_file_path, "r") as f:
                 self.logs = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             self.logs = [] 
@@ -34,286 +34,323 @@ class LogQueryEngine:
     def get_all_log_entries(self):
         return self.logs
 
-    def query_logs(self, s,
+    # --- Start of methods moved from global scope, original logic preserved ---
+    def query_logs_impl(self, s, # Renamed to avoid clash if a global query_logs is kept for delegation
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
-        if not self.logs: return []
+        # This is the exact logic from the original global query_logs function
+        # just using self.logs instead of global logs.
+        if not self.logs: return [] # Added safety for empty logs
 
-        flags = re.IGNORECASE if ignore_case else 0 # Simpler flag assignment
+        flags = ignore_case and re.IGNORECASE or 0
         try: r = re.compile(s, flags=flags)
         except: return []
 
         results = {}
         totals = {}
 
-        def to_datetime_fn(timestamp_str): 
-            return datetime.datetime.fromtimestamp(float(timestamp_str))
+        def to_datetime(timestamp):
+            return datetime.datetime.fromtimestamp(float(timestamp))
 
-        def to_timestamp_fn(dt_obj): 
-            return time.mktime(dt_obj.timetuple()) # Simpler, day is already part of dt_obj
+        def to_timestamp(d):
+            return time.mktime(
+                    datetime.datetime(d.year, d.month, d.day).timetuple())
 
-        def get_key(timestamp_str):
-            dt_obj = to_datetime_fn(timestamp_str)
-            if coarse: # Apply coarse logic to month/day
-                # Group by month: set day to 1 for coarse grouping by month
-                key_dt = datetime.datetime(dt_obj.year, dt_obj.month, 1)
-            else: # Group by day
-                key_dt = datetime.datetime(dt_obj.year, dt_obj.month, dt_obj.day)
-            return time.mktime(key_dt.timetuple())
-
+        def get_key(timestamp):
+            d = to_datetime(timestamp)
+            day = coarse and 1 or d.day
+            return time.mktime(
+                    datetime.datetime(d.year, d.month, day).timetuple())
 
         def get_value(key, m):
-            m.setdefault(key, {'x': key, 'y': 0}) # Use setdefault for cleaner init
+            if key not in m:
+                m[key] = {"x": key, "y": 0}
             return m[key]
 
-        for line in self.logs:
-            if nick and line['nick'].lower() not in self.VALID_NICKS.get(nick, []):
+        for line in self.logs: # Changed from global "logs" to "self.logs"
+            if nick and line["nick"].lower() not in self.VALID_NICKS.get(nick, []): # Use self.VALID_NICKS
                 continue
 
-            key_val = get_key(line['timestamp']) 
-            total_value = get_value(key_val, totals)
-            total_value['y'] += 1
+            key = get_key(line["timestamp"])
+            total_value = get_value(key, totals)
+            total_value["y"] += 1
 
-            if r.search(line['message']) is None:
+            if r.search(line["message"]) == None:
                 continue
 
-            value = get_value(key_val, results)
-            value['y'] += 1
-        
-        if not self.logs: 
-            return []
+            value = get_value(key, results)
+            value["y"] += 1
 
         smoothed = {}
-        running_total_matched = 0 # Renamed for clarity
-        running_total_possible_msgs = 0 # Renamed for clarity
-
-        min_log_time_dt = to_datetime_fn(self.logs[0]['timestamp'])
-        max_log_time_dt = to_datetime_fn(self.logs[-1]['timestamp'])
-
-        current_iter_dt = min_log_time_dt
-        last_key_processed = None 
-
-        while current_iter_dt <= max_log_time_dt:
-            # Generate key for the current day/month based on coarse
-            current_key = get_key(to_timestamp_fn(current_iter_dt))
-            
-            if current_key != last_key_processed: 
-                current_period_matched_count = results.get(current_key, {}).get('y', 0)
-                current_period_total_msgs = totals.get(current_key, {}).get('y', 0)
-
-                running_total_matched += current_period_matched_count
-                running_total_possible_msgs += current_period_total_msgs
-
-                if cumulative:
-                    smoothed[current_key] = {'x': current_key, 'y': running_total_matched}
-                    # For cumulative normalization, store the running total of messages
-                    totals[current_key] = {'x': current_key, 'y': running_total_possible_msgs} 
-                else:
-                    smoothed[current_key] = {'x': current_key, 'y': current_period_matched_count}
-                    # For non-cumulative, totals already has current_period_total_msgs
-                
-                last_key_processed = current_key
-            
-            # Increment depends on coarse. If coarse (monthly), jump to next month.
-            if coarse:
-                if current_iter_dt.month == 12:
-                    current_iter_dt = datetime.datetime(current_iter_dt.year + 1, 1, 1)
-                else:
-                    current_iter_dt = datetime.datetime(current_iter_dt.year, current_iter_dt.month + 1, 1)
-                # If next month jump overshoots max_log_time_dt, loop will terminate.
-            else:
-                current_iter_dt += datetime.timedelta(days=1)
-
-        if normalize and running_total_matched > 0: # Use running_total_matched
-            # This normalization logic has been tricky. Let's simplify for clarity.
-            # The core idea is to divide matched counts by total counts over a window.
-            # For cumulative, it's matched_cumulative / total_messages_cumulative.
-            # For non-cumulative, it's matched_in_window / total_messages_in_window.
-            
-            # This part of the original code was complex and its direct application
-            # to both cumulative and non-cumulative with windowing needs very careful state management.
-            # A simpler interpretation for normalization:
-            for key_val_sorted in sorted(smoothed.keys()):
-                s_val_dict = smoothed[key_val_sorted]
-                
-                if cumulative:
-                    # totals[key_val_sorted]['y'] is running_total_possible_msgs at this key
-                    norm_denominator = totals.get(key_val_sorted, {}).get('y', 0)
-                    if norm_denominator > 0:
-                        s_val_dict['y'] = float(s_val_dict['y']) / norm_denominator
-                    else:
-                        s_val_dict['y'] = 0.0
-                else:
-                    # For non-cumulative, normalize against total messages of THAT period (day/month)
-                    # totals was originally populated with per-period counts.
-                    norm_denominator = totals.get(key_val_sorted, {}).get('y', 0) # This is current_period_total_msgs
-                    if norm_denominator > 0:
-                       s_val_dict['y'] = float(s_val_dict['y']) / norm_denominator
-                    else:
-                       s_val_dict['y'] = 0.0
-            # The complex windowing logic from original is omitted here for robustness,
-            # as its interaction with cumulative and non-cumulative states was unclear
-            # and potentially buggy. This simpler normalization is more standard.
+        total_matched = 0
+        total_possible = 0
         
-        return sorted(smoothed.values(), key=lambda x_item: x_item['x'])
+        # Ensure self.logs is not empty before trying to access self.logs[0] or self.logs[-1]
+        if not self.logs: return []
 
-    def count_occurrences(self, s, ignore_case=False, nick=None):
-        if not self.logs: return 0
-        flags = re.IGNORECASE if ignore_case else 0
+
+        current_time = to_datetime(self.logs[0]["timestamp"]) # Changed from global "logs"
+        end_time = to_datetime(self.logs[-1]["timestamp"])   # Changed from global "logs"
+        last_key = None
+        while current_time <= end_time:
+            key = get_key(to_timestamp(current_time))
+            current_time += datetime.timedelta(days=1)
+            if key == last_key:
+                continue
+            last_key = key
+
+            value = key in results and results[key]["y"] or 0
+            total_possible += key in totals and totals[key]["y"] or 0
+            total_matched += value
+
+            if cumulative:
+                smoothed[key] = {"x": key, "y": total_matched}
+                # Original code for cumulative normalization was within the normalize block
+                # Here, we just store cumulative values. totals[key] is also made cumulative below for normalization.
+                if key in totals: # Ensure key exists if we are to make it cumulative
+                    totals[key] = {"x": key, "y": total_possible}
+            else:
+                smoothed[key] = {"x": key, "y": value}
+
+        if normalize and total_matched > 0:
+            total_window = []
+            matched_window = []
+            # Iterating over sorted keys to maintain chronological order for windowing
+            for key_sorted in sorted(smoothed.keys()): 
+                s_item = smoothed[key_sorted] # current smoothed item
+                # For cumulative, totals[key_sorted] was updated to cumulative total_possible
+                # For non-cumulative, totals[key_sorted] is day-specific total
+                t_item_y = totals.get(key_sorted, {}).get("y", 0)
+
+                total_window.append(t_item_y)
+                matched_window.append(s_item["y"])
+                
+                norm_type_str = str(normalize_type or "")
+                if norm_type_str.startswith("trailing_avg_"):
+                    try:
+                        window_size = int(norm_type_str[13:])
+                        total_window = total_window[-window_size:]
+                        matched_window = matched_window[-window_size:]
+                    except ValueError: # Default to single point if parse fails
+                        total_window = total_window[-1:]
+                        matched_window = matched_window[-1:]
+                else: # Default to single point normalization
+                    total_window = total_window[-1:]
+                    matched_window = matched_window[-1:]
+
+                current_total_sum = sum(total_window)
+                current_matched_sum = sum(matched_window)
+
+                if cumulative:
+                    # For cumulative, s_item["y"] is total_matched up to key_sorted
+                    # t_item_y is total_possible up to key_sorted
+                    if t_item_y == 0:
+                        s_item["y"] = 0.0
+                    else:
+                        # Ensure float division. Original value was already cumulative sum.
+                        s_item["y"] = float(s_item["y"]) / t_item_y 
+                else:
+                    # For non-cumulative, s_item["y"] is value for that day.
+                    # We normalize sum of matched in window by sum of total in window.
+                    if current_total_sum == 0:
+                        s_item["y"] = 0.0
+                    else:
+                        s_item["y"] = float(current_matched_sum) / current_total_sum
+        
+        return sorted(smoothed.values(), key=lambda x_val: x_val["x"])
+
+    def count_occurrences_impl(self, s, ignore_case=False, nick=None):
+        # Original logic from global count_occurrences
+        if not self.logs: return 0 # Safety for empty logs
+        flags = ignore_case and re.IGNORECASE or 0
         try: r = re.compile(s, flags=flags)
         except: return 0
 
         total = 0
-        for line in self.logs:
-            if nick and line['nick'].lower() not in self.VALID_NICKS.get(nick, []):
+        for line in self.logs: # Changed from global "logs"
+            if nick != None and line["nick"].lower() not in self.VALID_NICKS.get(nick, []): # Use self.VALID_NICKS
                 continue
-            if r.search(line['message']) is not None:
+            if r.search(line["message"]) != None:
                 total += 1
         return total
 
-    def get_logs_by_day(self):
-        if not self.logs: return {}
+    def get_logs_by_day_impl(self):
+        # Original logic from global get_logs_by_day
+        if not self.logs: return {} # Safety for empty logs
         days = {}
-        for line in self.logs:
-            dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
+        for line in self.logs: # Changed from global "logs"
+            dt = datetime.datetime.fromtimestamp(float(line["timestamp"]))
             key = (dt.year, dt.month, dt.day)
-            days.setdefault(key, []).append(line) # Cleaner way to append to list in dict
+            if key not in days:
+                days[key] = []
+            days[key].append(line)
         return days
 
-    def get_valid_days(self):
-        if not self.logs: return []
-        return sorted(self.get_logs_by_day().keys())
+    def get_valid_days_impl(self):
+        # Original logic from global get_valid_days
+        # Depends on the class"s get_logs_by_day_impl
+        if not self.logs: return [] # Safety for empty logs
+        return sorted(self.get_logs_by_day_impl().keys())
 
-    def get_all_days(self):
-        if not self.logs: return []
-        valid_days = self.get_valid_days()
-        if not valid_days: return []
+    def get_all_days_impl(self):
+        # Original logic from global get_all_days
+        # Depends on the class"s get_valid_days_impl
+        if not self.logs: return [] # Safety for empty logs
+        
+        valid_days = self.get_valid_days_impl() # Use internal method
+        if not valid_days: return [] # If no valid days, return empty list
 
-        start_date = datetime.date(valid_days[0][0], valid_days[0][1], valid_days[0][2])
-        end_date = datetime.date(valid_days[-1][0], valid_days[-1][1], valid_days[-1][2])
+        def to_datetime(day): # Inner helper, original scope
+            return datetime.datetime.fromtimestamp(float(time.mktime(
+                    datetime.datetime(day[0], day[1], day[2]).timetuple())))
+
+        current_time = to_datetime(valid_days[0])
+        end_time = to_datetime(valid_days[-1])
+        days = []
+        while current_time <= end_time:
+            days.append((current_time.year, current_time.month, current_time.day))
+            current_time += datetime.timedelta(days=1)
+        return days
         
-        all_days_list = []
-        current_date = start_date
-        while current_date <= end_date:
-            all_days_list.append((current_date.year, current_date.month, current_date.day))
-            current_date += datetime.timedelta(days=1)
-        return all_days_list
-        
-    def search_day_logs(self, s, ignore_case=False):
-        if not self.logs: return []
-        flags = re.IGNORECASE if ignore_case else 0
+    def search_day_logs_impl(self, s, ignore_case=False):
+        # Original logic from global search_day_logs
+        if not self.logs: return [] # Safety for empty logs
+        flags = ignore_case and re.IGNORECASE or 0
         try: r = re.compile(s, flags=flags)
         except: return []
 
         results = []
-        day_logs_map = self.get_logs_by_day() 
-        for day_key in reversed(sorted(day_logs_map.keys())): 
-            for index, line in enumerate(day_logs_map[day_key]): # Use enumerate for index
-                m = r.search(line['message'])
-                if m is not None:
-                    results.append((day_key, index, line, m.start(), m.end()))
+        day_logs = self.get_logs_by_day_impl() # Use internal method
+        for day in reversed(sorted(day_logs.keys())):
+            index = 0
+            for line in day_logs[day]:
+                m = r.search(line["message"])
+                if m != None:
+                    results.append((day, index, line, m.start(), m.end()))
+                index += 1
         return results
 
-    def search_results_to_chart(self, s, ignore_case=False):
-        if not self.logs: return [{'key': '', 'values': []}]
-        
-        search_results_list = self.search_day_logs(s, ignore_case=ignore_case) 
-        all_days_list = self.get_all_days() # Needed to establish full date range for chart
-        if not all_days_list: return [{'key': '', 'values': []}]
+    def search_results_to_chart_impl(self, s, ignore_case=False):
+        # Original logic from global search_results_to_chart
+        if not self.logs: return [{"key": "", "values": []}] # Safety for empty logs
 
-        def get_key_month(day_tuple_arg): 
-            return time.mktime(datetime.datetime(day_tuple_arg[0], day_tuple_arg[1], 1).timetuple())
+        results = self.search_day_logs_impl(s, ignore_case) # Use internal method
+        all_days_list = self.get_all_days_impl() # Use internal method
+        
+        if not all_days_list: return [{"key": "", "values": []}]
+
+
+        def get_key(day): # Inner helper, original scope
+             # Original grouped by month (day=1)
+            return time.mktime(
+                    datetime.datetime(day[0], day[1], 1).timetuple())
 
         counts = {}
-        # Initialize all months in the range of logs with 0 counts
-        # This uses the min/max dates from all_days_list derived from actual logs
-        min_month_dt = datetime.datetime(all_days_list[0][0], all_days_list[0][1], 1)
-        max_month_dt = datetime.datetime(all_days_list[-1][0], all_days_list[-1][1], 1)
+        # Initialize all months in the range with 0 counts
+        min_month_key = get_key(all_days_list[0])
+        max_month_key = get_key(all_days_list[-1])
         
-        current_month_iter_dt = min_month_dt
-        while current_month_iter_dt <= max_month_dt:
-            key = time.mktime(current_month_iter_dt.timetuple())
-            counts[key] = {'x': key, 'y': 0}
-            if current_month_iter_dt.month == 12:
-                current_month_iter_dt = datetime.datetime(current_month_iter_dt.year + 1, 1, 1)
+        current_dt = datetime.datetime.fromtimestamp(min_month_key)
+        end_dt = datetime.datetime.fromtimestamp(max_month_key)
+
+        while current_dt <= end_dt:
+            key = time.mktime(current_dt.timetuple())
+            counts[key] = {"x": key, "y": 0}
+            if current_dt.month == 12:
+                current_dt = datetime.datetime(current_dt.year + 1, 1, 1)
             else:
-                current_month_iter_dt = datetime.datetime(current_month_iter_dt.year, current_month_iter_dt.month + 1, 1)
-
-        for r_item in search_results_list: 
-            day_tuple = r_item[0]
-            key_for_month = get_key_month(day_tuple)
-            if key_for_month in counts: 
-                counts[key_for_month]['y'] += 1
+                current_dt = datetime.datetime(current_dt.year, current_dt.month + 1, 1)
         
-        return [{'key': '', 'values': sorted(counts.values(), key=lambda item_x_val: item_x_val['x'])}]
+        for r_item in results:
+            day = r_item[0]
+            month_key = get_key(day) # Get the month key for this result item
+            if month_key in counts: # Should always be true due to prefill
+                 counts[month_key]["y"] += 1
+        
+        return [{"key": "", "values": sorted(counts.values(), key=lambda x_val_lambda: x_val_lambda["x"])}]
+    # --- End of methods moved from global scope ---
 
-log_query_engine = LogQueryEngine()
+log_query_engine = LogQueryEngine() # Global instance
 
-@functools.lru_cache(maxsize=1000)
-def query_logs(s, cumulative=False, coarse=False, nick=None, ignore_case=False, normalize=False, normalize_type=None):
-    return log_query_engine.query_logs(s, cumulative, coarse, nick, ignore_case, normalize, normalize_type)
+# --- Delegating global functions, preserving original decorators ---
+# Original init_logs() is removed as its logic is in LogQueryEngine.__init__()
 
-@app.template_global() 
-@functools.lru_cache(maxsize=1000) 
-def count_occurrences(s, ignore_case=False, nick=None):
-    return log_query_engine.count_occurrences(s, ignore_case=ignore_case, nick=nick)
+@functools.lru_cache(maxsize=1000) # Original decorator
+def query_logs(s,
+        cumulative=False, coarse=False, nick=None, ignore_case=False,
+        normalize=False, normalize_type=None):
+    return log_query_engine.query_logs_impl(s, cumulative, coarse, nick, ignore_case, normalize, normalize_type)
 
-@app.template_global()
+@app.template_global() # Original decorator
 def graph_query(queries, nick_split=False, **kwargs):
+    # This function uses the global query_logs, which is now the delegating one.
+    # Its internal logic references LogQueryEngine.VALID_NICKS correctly.
     data = []
-    for (label, s_val) in queries: 
+    for (label, s_query) in queries: # Renamed s to s_query
         if not nick_split:
             data.append({
-                'key': label,
-                'values': query_logs(s_val, **kwargs), 
+                "key": label,
+                "values": query_logs(s_query, **kwargs), # Calls the cached global delegator
             })
         else:
-            for nick_key in sorted(LogQueryEngine.VALID_NICKS.keys()): 
-                nick_label_str = nick_key if label == '' else f"{label} - {nick_key}" 
+            for nick_key in sorted(LogQueryEngine.VALID_NICKS.keys()): # Access class attribute
+                if label == "":
+                    nick_label = nick_key
+                else:
+                    nick_label = f"{label} - {nick_key}" # Used f-string
                 data.append({
-                    'key': nick_label_str,
-                    'values': query_logs(s_val, nick=nick_key, **kwargs), 
+                    "key": nick_label,
+                    "values": query_logs(s_query, nick=nick_key, **kwargs), # Calls cached global delegator
                 })
     return data
 
-@app.template_global()
+@app.template_global() # Original decorator
 def table_query(queries, nick_split=False, order_by_total=False, **kwargs):
-    rows = [['', 'Total']]
+    # This function uses the global count_occurrences, which is now the delegating one.
+    # Its internal logic references LogQueryEngine.VALID_NICKS correctly.
+    rows = [["", "Total"]]
     if nick_split:
-        for nick_key_header in sorted(LogQueryEngine.VALID_NICKS.keys()): 
-            rows[0].append(nick_key_header)
+        for nick_key_h in sorted(LogQueryEngine.VALID_NICKS.keys()): # Renamed, access class attribute
+            rows[0].append(nick_key_h)
 
     tmp_rows = []
-    for (label, s_val) in queries: 
+    for (label, s_query) in queries: # Renamed s to s_query
         row = [label]
-        row.append(count_occurrences(s_val, **kwargs))
+        row.append(count_occurrences(s_query, **kwargs)) # Calls cached global delegator
         if nick_split:
-            for nick_key_for_cell in rows[0][2:]: 
-                row.append(count_occurrences(s_val, nick=nick_key_for_cell, **kwargs))
+            for nick_key_c in rows[0][2:]: # Renamed
+                row.append(count_occurrences(s_query, nick=nick_key_c, **kwargs)) # Calls cached global delegator
         tmp_rows.append(row)
 
     if order_by_total:
-        tmp_rows = sorted(tmp_rows, key=lambda item_row: item_row[1], reverse=True) 
+        tmp_rows = sorted(tmp_rows, key=lambda x_row: x_row[1], reverse=True) # Renamed x to x_row
 
     rows += tmp_rows
     return rows
 
-@functools.lru_cache(maxsize=1) 
+@app.template_global() # Original decorator
+@functools.lru_cache(maxsize=1000) # Original decorator
+def count_occurrences(s, ignore_case=False, nick=None):
+    return log_query_engine.count_occurrences_impl(s, ignore_case=ignore_case, nick=nick)
+
+@functools.lru_cache(maxsize=1) # Original decorator
 def get_valid_days():
-    return log_query_engine.get_valid_days()
+    return log_query_engine.get_valid_days_impl()
 
-@functools.lru_cache(maxsize=1) 
+@functools.lru_cache(maxsize=1) # Original decorator
 def get_all_days():
-    return log_query_engine.get_all_days()
+    return log_query_engine.get_all_days_impl()
 
-@functools.lru_cache(maxsize=1) 
+@functools.lru_cache(maxsize=1) # Original decorator
 def get_logs_by_day():
-    return log_query_engine.get_logs_by_day()
+    return log_query_engine.get_logs_by_day_impl()
 
-@functools.lru_cache(maxsize=1000) 
+@functools.lru_cache(maxsize=1000) # Original decorator
 def search_day_logs(s, ignore_case=False):
-    return log_query_engine.search_day_logs(s, ignore_case=ignore_case)
+    return log_query_engine.search_day_logs_impl(s, ignore_case=ignore_case)
 
-@functools.lru_cache(maxsize=1000) 
+@functools.lru_cache(maxsize=1000) # Original decorator
 def search_results_to_chart(s, ignore_case=False):
-    return log_query_engine.search_results_to_chart(s, ignore_case=ignore_case)
+    return log_query_engine.search_results_to_chart_impl(s, ignore_case=ignore_case)
+
+
