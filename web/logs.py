@@ -24,22 +24,44 @@ VALID_NICKS = {
 }
 
 class LogQueryEngine:
-    def __init__(self, log_file_path=None):
+    def __init__(self, log_file_path=None, log_data=None):
         self.logs = [] # Default to empty list
-        is_default_path = False
-        if not log_file_path:
-            log_file_path = os.path.join(APP_STATIC, 'log.json')
-            is_default_path = True
-        
-        try:
-            with open(log_file_path, 'r') as f:
-                self.logs = json.load(f)
-        except FileNotFoundError:
-            if not is_default_path:
-                # If a specific path was provided and not found, raise the error
-                raise
-            # If it was the default path, self.logs remains [], which is acceptable for tests
-            # The actual application should ensure log.json exists.
+
+        if log_data is not None:
+            self.logs = log_data
+        else:
+            # Existing file loading logic
+            chosen_log_path = None
+            # Assuming 'app' from 'from web import app' is the Flask instance.
+            if app.testing:
+                chosen_log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tests', 'test_log_sample.json'))
+                if log_file_path: # If a path is explicitly passed during testing, use it
+                    chosen_log_path = log_file_path
+            elif log_file_path:
+                chosen_log_path = log_file_path
+            else:
+                chosen_log_path = os.path.join(APP_STATIC, 'log.json')
+
+            try:
+                with open(chosen_log_path, 'r') as f:
+                    self.logs = json.load(f)
+            except FileNotFoundError:
+                if app.testing and chosen_log_path == os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tests', 'test_log_sample.json')):
+                     raise FileNotFoundError(f"Test log file not found during testing: {chosen_log_path}")
+                elif not (app.testing or log_file_path): 
+                    pass # self.logs remains [], default production path missing
+                else:
+                    if not app.testing:
+                        raise # Specific path provided (not default) and not found, and not testing
+
+    def clear_all_caches(self):
+        self.query_logs.cache_clear()
+        self.count_occurrences.cache_clear()
+        self.get_valid_days.cache_clear()
+        self.get_all_days.cache_clear()
+        self.get_logs_by_day.cache_clear()
+        self.search_day_logs.cache_clear()
+        self.search_results_to_chart.cache_clear()
 
     @functools.lru_cache(maxsize=1000)
     def query_logs(self, s,
