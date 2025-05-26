@@ -16,9 +16,8 @@ from web.logs import InMemoryLogQueryEngine, SQLiteLogQueryEngine
 from web import app, APP_STATIC # APP_STATIC might not be directly used but good to have app context
 
 # Fixed parameters for data generation
-DATA_GEN_START_DATE = "2023-01-01"
-DATA_GEN_END_DATE = "2023-03-31" # 3 months of data
-DATA_GEN_NUM_NICKS = 50
+DATA_GEN_START_DATE = "2013-01-01"
+DATA_GEN_END_DATE = "2025-03-31"
 SQLITE_BATCH_SIZE = 1000 # For SQLiteLogQueryEngine instantiation
 
 REPRESENTATIVE_QUERIES = [
@@ -36,7 +35,7 @@ REPRESENTATIVE_QUERIES = [
     {
         "name": "query_nick_filter",
         "method_to_call": "query_logs",
-        "query_args": {"s": "user", "nick": "User1"} # "user" is common, User1 will exist
+        "query_args": {"s": "user", "nick": "Cosmo"} # "user" is common, User1 will exist
     },
     {
         "name": "query_cumulative",
@@ -79,7 +78,6 @@ def generate_dataset(size, data_gen_script_path, output_file_path, seed):
         "--num-entries", str(size),
         "--start-date", DATA_GEN_START_DATE,
         "--end-date", DATA_GEN_END_DATE,
-        "--num-nicks", str(DATA_GEN_NUM_NICKS),
         "--output-file", output_file_path,
         "--seed", str(seed)
     ]

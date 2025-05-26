@@ -67,7 +67,6 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None, batch_size=1000):
         super().__init__(log_file_path, log_data)
         self.conn = sqlite3.connect(':memory:')
-        self.conn.enable_load_extension(True)
         self.batch_size = batch_size
 
         self.conn.enable_load_extension(True)
@@ -81,7 +80,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         with self.conn:
             self.conn.execute('''
                 CREATE TABLE IF NOT EXISTS logs (
-                    timestamp REAL,
+                    timestamp INTEGER,
                     nick TEXT,
                     message TEXT
                 )
@@ -132,191 +131,59 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
     def query_logs(self, s,
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
-        # Helper functions (can be static or defined outside if they don't need self)
-        def to_datetime_from_ts(timestamp):
-            return datetime.datetime.fromtimestamp(float(timestamp))
-
-        def to_timestamp_from_dt(d):
-            return time.mktime(
-                    datetime.datetime(d.year, d.month, d.day).timetuple())
-
-        def get_key_from_ts(timestamp, coarse_flag):
-            d = to_datetime_from_ts(timestamp)
-            day = 1 if coarse_flag else d.day # Coarse means aggregate by month (day=1)
-            return time.mktime(
-                    datetime.datetime(d.year, d.month, day).timetuple())
-
-        def get_value_from_dict(key, m):
-            if key not in m:
-                m[key] = {'x': key, 'y': 0}
-            return m[key]
-
-        # --- SQL Querying Part ---
         sql_params = []
         conditions = []
 
-        # Regex condition
+        # Prepare pattern for SQLite regexp: pattern first, then text.
         # Prepend (?i) for case-insensitivity with PCRE-like regex engines (sqlite-regex uses PCRE)
         current_pattern = f"(?i){s}" if ignore_case else s
         conditions.append("regexp(?, message)")
         sql_params.append(current_pattern)
 
-        # Nick filter condition
         if nick:
             if nick in VALID_NICKS:
                 nick_aliases = VALID_NICKS[nick]
-                if nick_aliases: # Ensure there are aliases to filter by
-                    placeholders = ', '.join('?' * len(nick_aliases))
-                    # Use lower(nick) in SQL for case-insensitive matching of nicks
-                    conditions.append(f"lower(nick) IN ({placeholders})")
-                    sql_params.extend([alias.lower() for alias in nick_aliases]) # Ensure aliases are lowercase for comparison
-                else: # If nick is in VALID_NICKS but has no aliases, no logs will match
-                    return [] # No logs can match this nick
+                if not nick_aliases:
+                     return 0 # Should not happen if nick is a valid key and VALID_NICKS is well-formed
+                placeholders = ', '.join('?' * len(nick_aliases))
+                # Using lower(nick) in SQL for case-insensitive matching.
+                conditions.append(f"lower(nick) IN ({placeholders})")
+                sql_params.extend([alias.lower() for alias in nick_aliases]) # Ensure aliases are lowercase for comparison
             else: # Unknown nick key
-                return [] # No logs can match this nick
+                return {}
 
-        # Construct the full SQL query for matched logs
-        matched_sql = "SELECT timestamp, nick, message FROM logs"
-        if conditions:
-            matched_sql += " WHERE " + " AND ".join(conditions)
-        matched_sql += " ORDER BY timestamp" # Ensure consistent order for processing
+        sql_str = f"""
+        SELECT
+            CAST(strftime('%Y', datetime(timestamp, 'unixepoch')) AS INT) as year,
+            CAST(strftime('%m', datetime(timestamp, 'unixepoch')) as INT) as month,
+            {'CAST(strftime("%d", datetime(timestamp, "unixepoch")) as INT)' if not coarse else "1"} as day,
+            COUNT(*) as count
+        FROM logs
+        WHERE {' AND '.join(conditions)}
+        GROUP BY 1, 2, 3
+        ORDER BY 1 ASC, 2 ASC, 3 ASC
+        """
+
+        def get_key(year, month, day):
+            return time.mktime(
+                    datetime.datetime(year, month, day).timetuple())
 
         cursor = self.conn.cursor()
-        try:
-            cursor.execute(matched_sql, sql_params)
-            matched_db_logs = [{'timestamp': r[0], 'nick': r[1], 'message': r[2]} for r in cursor.fetchall()]
-        except sqlite3.OperationalError as e_sqlite:
-            if "no such function: regexp" in str(e_sqlite).lower():
-                app.logger.error("ERROR: Native regexp function not available in SQLite for query_logs. SQLite regex extension not loaded correctly or missing.")
-            else:
-                app.logger.error(f"SQL error in query_logs (matched_sql): {e_sqlite} with SQL: {matched_sql} and params: {sql_params}")
-            return []
+        cursor.execute(sql_str, sql_params)
+        results = [
+            {
+                'x': get_key(year, month, day),
+                'y': count,
+            } for (year, month, day, count) in cursor.fetchall()
+        ]
 
-        # --- Fetch all logs for total counts (for normalization) ---
-        # This query should only be filtered by nick, not by message regex.
-        total_sql_params = []
-        total_conditions = []
-        if nick:
-            if nick in VALID_NICKS:
-                nick_aliases = VALID_NICKS[nick]
-                if nick_aliases:
-                    placeholders = ', '.join('?' * len(nick_aliases))
-                    total_conditions.append(f"lower(nick) IN ({placeholders})")
-                    total_sql_params.extend([alias.lower() for alias in nick_aliases])
-                else:
-                    # If nick is in VALID_NICKS but has no aliases, total logs for this nick is 0
-                    total_db_logs = []
-            else: # Unknown nick key
-                total_db_logs = []
+        if cumulative:
+            total = 0
+            for result in results:
+                total += result['y']
+                result['y'] = total
 
-        total_sql = "SELECT timestamp, nick, message FROM logs"
-        if total_conditions:
-            total_sql += " WHERE " + " AND ".join(total_conditions)
-        total_sql += " ORDER BY timestamp"
-
-        try:
-            cursor.execute(total_sql, total_sql_params)
-            total_db_logs = [{'timestamp': r[0], 'nick': r[1], 'message': r[2]} for r in cursor.fetchall()]
-        except sqlite3.OperationalError as e_sqlite:
-            app.logger.error(f"SQL error in query_logs (total_sql): {e_sqlite} with SQL: {total_sql} and params: {total_sql_params}")
-            return []
-
-        if not matched_db_logs and not total_db_logs:
-            return []
-
-        # --- Python Processing Part (similar to InMemoryLogQueryEngine) ---
-        results = {}  # For messages matching s
-        totals = {}   # For all messages (within nick filter)
-
-        # Populate totals first
-        for line in total_db_logs:
-            key = get_key_from_ts(line['timestamp'], coarse)
-            total_value = get_value_from_dict(key, totals)
-            total_value['y'] += 1
-
-        # Populate results (matched messages)
-        for line in matched_db_logs:
-            key = get_key_from_ts(line['timestamp'], coarse)
-            value = get_value_from_dict(key, results)
-            value['y'] += 1
-
-        smoothed = {}
-        total_matched_overall = 0
-        total_possible_overall = 0
-
-        # Determine the full date range from the data
-        all_days_tuples = self.get_all_days() # This returns (y,m,d)
-        if not all_days_tuples:
-            # If there are no valid days, but there might be logs (e.g., only logs for a specific nick that doesn't exist)
-            # we should still return an empty list.
-            return []
-
-        # Generate all relevant keys based on all_days_tuples and coarse flag
-        # This ensures that days/months with zero matches are also included.
-        all_relevant_keys = sorted(list(set(
-            get_key_from_ts(to_timestamp_from_dt(datetime.datetime(d[0],d[1],d[2])), coarse)
-            for d in all_days_tuples
-        )))
-
-        # Initialize smoothed and totals for all relevant keys to ensure all periods are present
-        for key_ts in all_relevant_keys:
-            if key_ts not in results:
-                results[key_ts] = {'x': key_ts, 'y': 0}
-            if key_ts not in totals:
-                totals[key_ts] = {'x': key_ts, 'y': 0}
-
-        # Now iterate through sorted keys to apply cumulative and normalization logic
-        for key_ts in all_relevant_keys:
-            value = results[key_ts]['y'] # Matched count for this period
-            total_for_period = totals[key_ts]['y'] # Total count for this period
-
-            total_possible_overall += total_for_period
-            total_matched_overall += value
-
-            if cumulative:
-                smoothed[key_ts] = {'x': key_ts, 'y': total_matched_overall}
-                # For cumulative normalization, totals also need to be cumulative
-                totals[key_ts]['y'] = total_possible_overall # Update the 'y' value in the totals dict
-            else:
-                smoothed[key_ts] = {'x': key_ts, 'y': value}
-                # totals[key_ts] already stores total_for_period from the loop over db_logs
-
-        if normalize: # Normalization should only happen if there's data to normalize
-            final_smoothed_values = []
-            total_window_values = []
-            matched_window_values = []
-
-            for key_ts in sorted(smoothed.keys()):
-                current_total_for_period = totals[key_ts]['y']
-                current_matched_for_period = smoothed[key_ts]['y']
-
-                if cumulative:
-                    if current_total_for_period == 0:
-                        smoothed[key_ts]['y'] = 0
-                    else:
-                        smoothed[key_ts]['y'] = current_matched_for_period / current_total_for_period
-                else: # Non-cumulative normalization
-                    total_window_values.append(current_total_for_period)
-                    matched_window_values.append(current_matched_for_period)
-
-                    if str(normalize_type or '').startswith('trailing_avg_'):
-                        window_size = int(normalize_type[13:])
-                        total_window_values = total_window_values[-window_size:]
-                        matched_window_values = matched_window_values[-window_size:]
-                    else: # Default window is just the current period
-                        total_window_values = total_window_values[-1:]
-                        matched_window_values = matched_window_values[-1:]
-
-                    if sum(total_window_values) == 0:
-                        smoothed[key_ts]['y'] = 0
-                    else:
-                        smoothed[key_ts]['y'] = sum(matched_window_values) / sum(total_window_values)
-
-                final_smoothed_values.append(smoothed[key_ts])
-
-            return sorted(final_smoothed_values, key=lambda x_val: x_val['x'])
-        else: # No normalization
-            return sorted(smoothed.values(), key=lambda x_val: x_val['x'])
+        return results
 
     def count_occurrences(self, s, ignore_case=False, nick=None):
         sql_params = []
@@ -491,220 +358,6 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 'key': '', # Label for the chart series
                 'values': sorted(counts.values(), key=lambda val: val['x'])
             }]
-
-    def query_logs(self, s,
-            cumulative=False, coarse=False, nick=None, ignore_case=False,
-            normalize=False, normalize_type=None):
-        """
-        Query logs for a given regular expression and return a time series of the
-        number of occurrences of lines matching the regular expression per day, using SQL.
-        The core filtering is done via SQL, and then processing (aggregation, normalization)
-        is done in Python to match the InMemoryLogQueryEngine's complex logic.
-        """
-
-        # Helper functions (can be static or defined outside if they don't need self)
-        def to_datetime_from_ts(timestamp):
-            return datetime.datetime.fromtimestamp(float(timestamp))
-
-        def to_timestamp_from_dt(d):
-            return time.mktime(
-                    datetime.datetime(d.year, d.month, d.day).timetuple())
-
-        def get_key_from_ts(timestamp, coarse_flag):
-            d = to_datetime_from_ts(timestamp)
-            day = 1 if coarse_flag else d.day # Coarse means aggregate by month (day=1)
-            return time.mktime(
-                    datetime.datetime(d.year, d.month, day).timetuple())
-
-        def get_value_from_dict(key, m):
-            if key not in m:
-                m[key] = {'x': key, 'y': 0}
-            return m[key]
-
-        # --- SQL Querying Part ---
-        sql_params = []
-        base_sql = "SELECT timestamp, nick, message FROM logs WHERE 1=1"
-
-        if nick and nick in VALID_NICKS:
-            nick_placeholders = ', '.join(['?'] * len(VALID_NICKS[nick]))
-            base_sql += f" AND nick IN ({nick_placeholders})"
-            sql_params.extend(VALID_NICKS[nick])
-
-        # For regex, we always use REGEXP_FLAGS for consistency
-        # The UDF handles re.IGNORECASE if ignore_case is True
-        # base_sql += " AND REGEXP_FLAGS(?, message, ?)" # This was the plan for count_occurrences
-        # sql_params.extend([s, re.IGNORECASE if ignore_case else 0])
-        # However, for query_logs, the original code iterates all logs and then filters.
-        # Let's try to fetch all logs (optionally filtered by nick) and then process.
-        # This simplifies the SQL part and keeps the complex logic in Python.
-        # OR, filter by regex in SQL too. This is more efficient.
-
-        # Let's stick to filtering by regex in SQL
-        # The REGEXP_FLAGS UDF is already defined in __init__ to take (pattern, text, flags)
-        # However, it was overwritten in count_occurrences. Let's redefine it properly in __init__
-        # For now, assume REGEXP_FLAGS is pattern, text, flags(int)
-        # We need to ensure the UDF is robust.
-        # Let's re-register the UDF here for clarity or ensure it's correctly done in __init__
-
-        # Re-defining the UDF for safety in this method context, though ideally it's instance-wide
-        # def regexp_with_flags(pattern, text, flags_int=0):
-        #     try:
-        #         return 1 if re.search(pattern, text, flags_int) else 0
-        #     except re.error: # Catch invalid regex patterns
-        #         return 0
-        # self.conn.create_function("REGEXP_FLAGS", 3, regexp_with_flags) # REMOVED - UDFs are in __init__
-
-
-        # Store data for lines that match the regex
-        matched_lines = []
-        # Store data for all lines (for normalization)
-        all_lines_for_period = []
-
-        # Fetch all logs and then filter in Python (Simpler to port, less efficient)
-        # vs Fetch filtered logs from SQL (More efficient, harder to port `r.search` for totals)
-
-        # The original code calculates totals based on ALL lines, not just those matching `s` for `r.search`.
-        # So, we need two types of aggregations:
-        # 1. Totals per day/month (all messages)
-        # 2. Matched per day/month (messages matching `s`)
-
-        cursor = self.conn.cursor()
-
-        # Get all logs within the relevant nick filter (if any)
-        # This data will be used for calculating totals and for filtering by regex `s`
-        query_all_for_nick = "SELECT timestamp, message, nick FROM logs"
-        params_all_for_nick = []
-        if nick:
-            if nick in VALID_NICKS:
-                nick_aliases = VALID_NICKS[nick]
-                if nick_aliases:
-                    nick_placeholders = ', '.join(['?'] * len(nick_aliases))
-                    query_all_for_nick += f" WHERE lower(nick) IN ({nick_placeholders})"
-                    params_all_for_nick.extend([alias.lower() for alias in nick_aliases])
-                else:
-                    # If nick is in VALID_NICKS but has no aliases, no logs will match
-                    db_logs = [] # Set db_logs to empty to avoid further processing
-                    return []
-            else: # Unknown nick key
-                db_logs = [] # Set db_logs to empty to avoid further processing
-                return []
-
-        cursor.execute(query_all_for_nick, params_all_for_nick)
-        db_logs = [{'timestamp': r[0], 'message': r[1], 'nick': r[2]} for r in cursor.fetchall()]
-
-        if not db_logs:
-            return []
-
-        # Compile regex s
-        try:
-            r = re.compile(s, re.IGNORECASE if ignore_case else 0)
-        except re.error:
-            return [] # Invalid regex pattern
-
-        # --- Python Processing Part (similar to InMemoryLogQueryEngine) ---
-        results = {}  # For messages matching s
-        totals = {}   # For all messages (within nick filter)
-
-        for line in db_logs:
-            key = get_key_from_ts(line['timestamp'], coarse)
-
-            total_value = get_value_from_dict(key, totals)
-            total_value['y'] += 1
-
-            if r.search(line['message']) is None:
-                continue
-
-            value = get_value_from_dict(key, results)
-            value['y'] += 1
-
-        smoothed = {}
-        total_matched_overall = 0
-        total_possible_overall = 0
-
-        # Determine the full date range from the data
-        # min_ts = min(l['timestamp'] for l in db_logs)
-        # max_ts = max(l['timestamp'] for l in db_logs)
-        # current_dt = to_datetime_from_ts(min_ts)
-        # end_dt = to_datetime_from_ts(max_ts)
-
-        # Or, use get_all_days which uses the get_valid_days (from DB)
-        # This ensures we cover all days even if some have no logs.
-        all_days_tuples = self.get_all_days() # This returns (y,m,d)
-        if not all_days_tuples:
-            return []
-
-        # Generate all relevant keys based on all_days_tuples and coarse flag
-        # This ensures that days/months with zero matches are also included.
-        all_relevant_keys = sorted(list(set(
-            get_key_from_ts(to_timestamp_from_dt(datetime.datetime(d[0],d[1],d[2])), coarse)
-            for d in all_days_tuples
-        )))
-
-        last_key_processed = None # To handle coarse grouping correctly over iterations
-
-        for key_ts in all_relevant_keys:
-            # key_ts is already the correct key for the period (day or month start)
-
-            # This loop is different from InMemory. We iterate over pre-calculated keys.
-            # current_dt = to_datetime_from_ts(key_ts) # Not needed if key_ts is already the key
-
-            value = results.get(key_ts, {'y': 0})['y']
-            total_for_period = totals.get(key_ts, {'y': 0})['y']
-
-            total_possible_overall += total_for_period # This is sum of all messages in period
-            total_matched_overall += value          # This is sum of matched messages in period
-
-            if cumulative:
-                smoothed[key_ts] = {'x': key_ts, 'y': total_matched_overall}
-                # For cumulative normalization, totals also need to be cumulative
-                totals[key_ts] = {'x': key_ts, 'y': total_possible_overall}
-            else:
-                smoothed[key_ts] = {'x': key_ts, 'y': value}
-                # totals[key_ts] already stores total_for_period from the loop over db_logs
-                # but ensure it's there if a key_ts from all_relevant_keys had no logs
-                if key_ts not in totals: totals[key_ts] = {'x': key_ts, 'y': 0}
-
-
-        if normalize and total_matched_overall > 0:
-            # Normalization logic - this part is complex and needs careful porting
-            # It uses a window which can be 'trailing_avg_X' or just the current period's total.
-            total_window_values = []
-            matched_window_values = []
-
-            for key_ts in sorted(smoothed.keys()): # Iterate in chronological order
-                current_total_for_period = totals.get(key_ts, {'y': 0})['y']
-                current_matched_for_period = smoothed[key_ts]['y'] # This is already cumulative if cumulative=True
-
-                if cumulative: # For cumulative, normalization is against cumulative totals
-                    if totals[key_ts]['y'] == 0:
-                         smoothed[key_ts]['y'] = 0
-                    else:
-                         smoothed[key_ts]['y'] = total_matched_overall / total_possible_overall # This seems wrong for cumulative per point
-                         # The original logic for cumulative normalization:
-                         # smoothed[key]['y'] /= totals[key]['y']
-                         # where totals[key]['y'] was also cumulative.
-                         # So, it should be:
-                         smoothed[key_ts]['y'] = smoothed[key_ts]['y'] / totals[key_ts]['y'] if totals[key_ts]['y'] > 0 else 0
-
-                else: # Non-cumulative normalization
-                    if str(normalize_type or '').startswith('trailing_avg_'):
-                        window_size = int(normalize_type[13:])
-                        total_window_values.append(current_total_for_period)
-                        matched_window_values.append(current_matched_for_period) # current_matched_for_period is non-cumulative here
-
-                        total_window_values = total_window_values[-window_size:]
-                        matched_window_values = matched_window_values[-window_size:]
-                    else: # Default window is just the current period
-                        total_window_values = [current_total_for_period]
-                        matched_window_values = [current_matched_for_period]
-
-                    if sum(total_window_values) == 0:
-                        smoothed[key_ts]['y'] = 0
-                    else:
-                        smoothed[key_ts]['y'] = sum(matched_window_values) / sum(total_window_values)
-
-        return sorted(smoothed.values(), key=lambda x_val: x_val['x'])
-
 
 class InMemoryLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None):

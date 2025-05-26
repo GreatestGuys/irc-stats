@@ -4,9 +4,16 @@ import json
 import random
 import time
 import string
+import sys
+import os
+
+# Add the parent directory to the Python path to allow importing web.logs
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from web.logs import VALID_NICKS
 
 VOCABULARY = [
-    "error", "warning", "info", "debug", "request", "response", "user", "login", 
+    "error", "warning", "info", "debug", "request", "response", "user", "login",
     "logout", "payment", "file", "database", "success", "failure", "system",
     "network", "service", "module", "component", "process", "event", "data",
     "critical", "timeout", "exception", "connection", "authentication", "authorization",
@@ -33,17 +40,17 @@ def generate_random_message(vocab, common_words):
             message_parts.append(random.choice(common_words))
         else:
             message_parts.append(random.choice(vocab))
-    
+
     # Occasionally add a random number
     if random.random() < 0.2: # 20% chance
         message_parts.append(str(random.randint(100, 9999)))
-    
+
     # Occasionally add a short random string
     if random.random() < 0.1: # 10% chance
         random_str_len = random.randint(3, 6)
         random_chars = ''.join(random.choices(string.ascii_lowercase + string.digits, k=random_str_len))
         message_parts.append(random_chars)
-        
+
     random.shuffle(message_parts) # Shuffle to make it less predictable
     return ' '.join(message_parts)
 
@@ -52,7 +59,6 @@ def main():
     parser.add_argument("--num-entries", type=int, required=True, help="Total number of log entries to generate.")
     parser.add_argument("--start-date", type=str, required=True, help="Start date for log entries (YYYY-MM-DD).")
     parser.add_argument("--end-date", type=str, required=True, help="End date for log entries (YYYY-MM-DD).")
-    parser.add_argument("--num-nicks", type=int, default=10, help="Number of unique nicks to generate (default: 10).")
     parser.add_argument("--output-file", type=str, default="generated_log_data.json", help="Path to save the generated JSON data (default: generated_log_data.json).")
     parser.add_argument("--seed", type=int, help="Seed for the random number generator.")
     parser.add_argument("--pretty-print", action='store_true', default=False, help="If set, pretty-print the JSON output.")
@@ -63,7 +69,11 @@ def main():
         random.seed(args.seed)
 
     # Generate nicks
-    nicks = [f"User{i+1}" for i in range(args.num_nicks)]
+    nicks = []
+    for canonical_nick in VALID_NICKS.keys():
+        for nick in VALID_NICKS[canonical_nick]:
+            nicks.append(nick.upper())
+            nicks.append(nick.lower())
 
     # Parse dates
     try:
@@ -84,14 +94,14 @@ def main():
         timestamp_float = generate_random_timestamp(start_dt, end_dt)
         selected_nick = random.choice(nicks)
         message = generate_random_message(VOCABULARY, COMMON_WORDS)
-        
+
         log_entry = {
             "timestamp": str(timestamp_float), # Store as string, like original format
             "nick": selected_nick,
             "message": message
         }
         log_entries.append(log_entry)
-        
+
         if (i + 1) % (args.num_entries // 10 if args.num_entries >= 10 else 1) == 0 :
              print(f"Generated {i+1}/{args.num_entries} entries...")
 
