@@ -279,22 +279,6 @@ class BaseLogQueryEngineTests:
         ])
         self.assertEqual(engine.get_valid_days(), expected_days)
 
-    def test_get_all_days_empty_data(self):
-        engine = self.create_engine(log_data=[])
-        self.assertEqual(engine.get_all_days(), [])
-
-    def test_get_all_days_populated(self):
-        log_data = [
-            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "m1"},
-            {"timestamp": ts(DAY_3), "nick": "UserA", "message": "m3"}, # DAY_2 is missing in data
-        ]
-        engine = self.create_engine(log_data=log_data)
-        expected_days = [
-            (DAY_1.year, DAY_1.month, DAY_1.day),
-            (DAY_2.year, DAY_2.month, DAY_2.day),
-            (DAY_3.year, DAY_3.month, DAY_3.day),
-        ]
-        self.assertEqual(engine.get_all_days(), expected_days)
 
     def test_get_logs_by_day(self):
         log_d1_1 = {"timestamp": ts(DAY_1), "nick": "UserA", "message": "d1m1"}

@@ -48,10 +48,6 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_all_days(self):
-        pass
-
-    @abc.abstractmethod
     def get_logs_by_day(self):
         pass
 
@@ -358,27 +354,6 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         cursor = self.conn.cursor()
         cursor.execute(sql)
         return [tuple(row) for row in cursor.fetchall()]
-
-    def get_all_days(self):
-        """
-        Return a list of (year, month, day) tuples between the starting and end date
-        even if there is no data. Uses get_valid_days to determine range.
-        """
-        def to_datetime_helper(day_tuple):
-            return datetime.datetime(day_tuple[0], day_tuple[1], day_tuple[2])
-
-        valid_days_list = self.get_valid_days()
-        if not valid_days_list:
-            return []
-
-        current_time = to_datetime_helper(valid_days_list[0])
-        end_time = to_datetime_helper(valid_days_list[-1])
-
-        all_days_list = []
-        while current_time <= end_time:
-            all_days_list.append((current_time.year, current_time.month, current_time.day))
-            current_time += datetime.timedelta(days=1)
-        return all_days_list
 
     def get_logs_by_day(self):
         """
