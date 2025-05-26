@@ -351,10 +351,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         log entry for that day, using SQL.
         """
         sql = """
-            SELECT DISTINCT
-                   CAST(strftime('%Y', timestamp, 'unixepoch') AS INTEGER),
-                   CAST(strftime('%m', timestamp, 'unixepoch') AS INTEGER),
-                   CAST(strftime('%d', timestamp, 'unixepoch') AS INTEGER)
+            SELECT DISTINCT year, month, day
             FROM logs
             ORDER BY 1, 2, 3
         """
