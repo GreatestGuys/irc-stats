@@ -75,17 +75,46 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         self._create_table()
         self._load_data(log_file_path, log_data)
+        self._post_insert()
 
     def _create_table(self):
         with self.conn:
             self.conn.execute('''
                 CREATE TABLE IF NOT EXISTS logs (
                     timestamp INTEGER,
+                    year INTEGER,
+                    month INTEGER,
+                    day INTEGER,
+                    timestamp_day INTEGER,
                     nick TEXT,
                     message TEXT
                 )
             ''')
-            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON logs (timestamp)')
+            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_date ON logs (year, month, day)')
+            #self.conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON logs (timestamp_day)')
+
+    def _post_insert(self):
+        queries = [
+            """
+            CREATE TABLE IF NOT EXISTS all_days AS
+                WITH RECURSIVE dates(date) AS (
+                    SELECT ((SELECT DATE(timestamp_day, 'unixepoch') FROM logs ORDER BY timestamp_day ASC LIMIT 1))
+                    UNION ALL
+                    SELECT DATE(date, '+1 day')
+                    FROM dates
+                    WHERE date < ((SELECT DATE(timestamp_day, 'unixepoch') FROM logs ORDER BY timestamp_day DESC LIMIT 1))
+                )
+                SELECT
+                    CAST(strftime('%Y', date) AS INT) as year,
+                    CAST(strftime('%m', date) as INT) as month,
+                    CAST(strftime('%d', date) as INT) as day
+                FROM dates
+                GROUP BY 1, 2, 3
+            """
+        ]
+        with self.conn:
+            for query in queries:
+                self.conn.execute(query)
 
     def _load_data(self, log_file_path, log_data):
         if log_data is not None: # Corrected condition
@@ -119,8 +148,19 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 for i in range(0, len(logs_to_insert), self.batch_size):
                     batch = logs_to_insert[i:i + self.batch_size]
                     self.conn.executemany(
-                        'INSERT INTO logs (timestamp, nick, message) VALUES (?, ?, ?)',
-                        [(item['timestamp'], item['nick'], item['message']) for item in batch]
+                        '''
+                        INSERT INTO logs (timestamp, year, month, day, timestamp_day, nick, message)
+                        VALUES (
+                            ?,
+                            CAST(strftime('%Y', CAST(? AS INT), 'unixepoch') AS INT),
+                            CAST(strftime('%m', CAST(? AS INT), 'unixepoch') as INT),
+                            CAST(strftime('%d', CAST(? AS INT), 'unixepoch') as INT),
+                            UNIXEPOCH(strftime('%Y-%m-%d', CAST(? AS INT), 'unixepoch')),
+                            ?,
+                            ?
+                        )
+                        ''',
+                        [(item['timestamp'], item['timestamp'], item['timestamp'], item['timestamp'], item['timestamp'], item['nick'], item['message']) for item in batch]
                     )
 
     def clear_all_caches(self):
@@ -154,13 +194,16 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         sql_str = f"""
         SELECT
-            CAST(strftime('%Y', datetime(timestamp, 'unixepoch')) AS INT) as year,
-            CAST(strftime('%m', datetime(timestamp, 'unixepoch')) as INT) as month,
-            {'CAST(strftime("%d", datetime(timestamp, "unixepoch")) as INT)' if not coarse else "1"} as day,
-            COUNT(*) as count
-        FROM logs
-        WHERE {' AND '.join(conditions)}
-        GROUP BY 1, 2, 3
+            all_days.year as year,
+            all_days.month as month,
+            {'all_days.day' if not coarse else "1"} as day,
+            SUM(CAST({' AND '.join(conditions)} AS INT)) AS count
+        FROM all_days, logs
+        WHERE
+            all_days.year = logs.year
+            AND all_days.month = logs.month
+            AND all_days.day = logs.day
+        group by 1, 2, 3
         ORDER BY 1 ASC, 2 ASC, 3 ASC
         """
 
