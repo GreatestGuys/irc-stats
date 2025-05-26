@@ -107,10 +107,45 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 SELECT
                     CAST(strftime('%Y', date) AS INT) as year,
                     CAST(strftime('%m', date) as INT) as month,
-                    CAST(strftime('%d', date) as INT) as day
+                    CAST(strftime('%d', date) as INT) as day,
+                    UNIXEPOCH(strftime('%Y-%m-%d', date)) AS timestamp_day
                 FROM dates
-                GROUP BY 1, 2, 3
+                GROUP BY 1, 2, 3, 4
+            """,
             """
+            CREATE TABLE IF NOT EXISTS totals_fine AS
+                SELECT
+                    all_days.year as year,
+                    all_days.month as month,
+                    all_days.day as day,
+                    date(all_days.year ||'-01-01','+'||(all_days.month-1)||' month','+'||(all_days.day-1)||' day') AS timestamp_day,
+                    SUM(logs.year > 0) AS count
+                FROM all_days, logs
+                WHERE
+                    all_days.year = logs.year
+                    AND all_days.month = logs.month
+                    AND all_days.day = logs.day
+                GROUP BY 1, 2, 3
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_date ON totals_fine (year, month, day)",
+            "CREATE INDEX IF NOT EXISTS idx_timestamp ON totals_fine (timestamp_day)",
+            """
+            CREATE TABLE IF NOT EXISTS totals_coarse AS
+                SELECT
+                    all_days.year as year,
+                    all_days.month as month,
+                    1 as day,
+                    date(all_days.year ||'-01-01','+'||(all_days.month-1)||' month') AS timestamp_day,
+                    SUM(logs.year > 0) AS count
+                FROM all_days, logs
+                WHERE
+                    all_days.year = logs.year
+                    AND all_days.month = logs.month
+                    AND all_days.day = logs.day
+                GROUP BY 1, 2, 3
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_date ON totals_coarse (year, month, day)",
+            "CREATE INDEX IF NOT EXISTS idx_timestamp ON totals_coarse (timestamp_day)",
         ]
         with self.conn:
             for query in queries:
@@ -193,19 +228,71 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 return {}
 
         sql_str = f"""
-        SELECT
-            all_days.year as year,
-            all_days.month as month,
-            {'all_days.day' if not coarse else "1"} as day,
-            SUM(CAST({' AND '.join(conditions)} AS INT)) AS count
-        FROM all_days, logs
-        WHERE
-            all_days.year = logs.year
-            AND all_days.month = logs.month
-            AND all_days.day = logs.day
-        group by 1, 2, 3
-        ORDER BY 1 ASC, 2 ASC, 3 ASC
+        WITH
+            matches_no_timestamp AS (
+                SELECT
+                    all_days.year as year,
+                    all_days.month as month,
+                    {'all_days.day' if not coarse else "1"} as day,
+                    SUM(CAST({' AND '.join(conditions)} AS INT)) AS count
+                FROM all_days, logs
+                WHERE
+                    all_days.year = logs.year
+                    AND all_days.month = logs.month
+                    AND all_days.day = logs.day
+                GROUP BY 1, 2, 3
+            ),
+            matches AS (
+                SELECT
+                    year,
+                    month,
+                    day,
+                    date(year ||'-01-01','+'||(month-1)||' month', '+'||(day-1)||' day') AS timestamp_day,
+                    count
+                FROM matches_no_timestamp
+            )
         """
+        if not normalize:
+            sql_str += """
+            SELECT year, month, day, count
+            FROM matches
+            ORDER BY 1 ASC, 2 ASC, 3 ASC
+            """
+        elif str(normalize_type or '').startswith('trailing_avg_'):
+            window_size = int(normalize_type[13:])
+            lookback_start = f"date(matches.timestamp_day, '-{window_size - 1} day')"
+            matches_date = 'matches.timestamp_day'
+            totals_date = 'totals.timestamp_day'
+            total_window_cond = f'{lookback_start} <= {totals_date} AND {totals_date} <= {matches_date}'
+            sql_str += f""",
+            totals AS (
+                SELECT
+                    matches.year,
+                    matches.month,
+                    matches.day,
+                    SUM(totals.count) AS count
+                FROM matches, {'totals_coarse' if coarse else 'totals_fine'} AS totals
+                WHERE {total_window_cond}
+                GROUP BY 1, 2, 3
+            )
+            SELECT
+                matches.year,
+                matches.month,
+                matches.day,
+                CAST(matches.count AS REAL) / CAST(totals.count AS REAL) AS count
+            FROM matches
+            LEFT JOIN totals ON
+                matches.year = totals.year
+                AND matches.month = totals.month
+                AND matches.day = totals.day
+            ORDER BY 1 ASC, 2 ASC, 3 ASC
+            """
+        else:
+            sql_str += """
+            SELECT year, month, day, CAST(count AS REAL) / (SELECT COUNT(*) FROM logs) AS count
+            FROM matches
+            ORDER BY 1 ASC, 2 ASC, 3 ASC
+            """
 
         def get_key(year, month, day):
             return time.mktime(
