@@ -448,39 +448,40 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         return results
 
     def search_results_to_chart(self, s, ignore_case=False):
-        # This method reuses other methods that are already adapted for SQLite.
-        results = self.search_day_logs(s, ignore_case) # Uses SQLite version
+        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, None)
 
-        def get_key(day_tuple): # day_tuple is (year, month, day)
-            # Ensure this is consistent with how keys are generated for 'counts'
-            return time.mktime(
-                    datetime.datetime(day_tuple[0], day_tuple[1], 1).timetuple())
+        if has_error:
+            return [{'key': '', 'values': []}]
 
-        counts = {}
-        all_days_list = self.get_all_days() # Uses SQLite version
-        if not all_days_list:
-             return [{'key': '', 'values': []}]
+        sql_str = f"""
+            SELECT
+                year,
+                month,
+                COUNT(*) AS count
+            FROM logs
+            WHERE {' AND '.join(conditions)}
+            GROUP BY 1, 2
+            ORDER BY 1 ASC, 2 ASC
+        """
 
-        # Initialize counts for all days in the range (month-level aggregation)
-        for day_tuple in all_days_list: # day_tuple is (year, month, day)
-            # Key for counts should be the first day of the month of day_tuple
-            month_key_ts = get_key(day_tuple)
-            if month_key_ts not in counts: # Ensure each month is initialized once
-                 counts[month_key_ts] = {'x': month_key_ts, 'y': 0}
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql_str, sql_params)
+        except sqlite3.OperationalError as e_sqlite:
+            app.logger.error(f"SQL error in search_results_to_chart: {e_sqlite} with SQL: {sql_str} and params: {sql_params}")
+            return [{'key': '', 'values': []}]
 
-        for r_tuple in results: # r_tuple is ((year, month, day), index, line, m.start(), m.end())
-            day_of_result = r_tuple[0] # This is (year, month, day)
-            month_key_of_result_ts = get_key(day_of_result)
-            if month_key_of_result_ts in counts: # Should always be true if all_days_list is comprehensive
-                counts[month_key_of_result_ts]['y'] += 1
-            # else: # This case should ideally not happen if all_days_list covers the range of results
-            #    app.logger.warn(f"Day {day_of_result} from search results not found in all_days_list derived keys.")
-
+        results = [
+            {
+                'x': time.mktime(datetime.datetime(year, month, 1).timetuple()),
+                'y': count,
+            } for (year, month, count) in cursor.fetchall()
+        ]
 
         return [{
-                'key': '', # Label for the chart series
-                'values': sorted(counts.values(), key=lambda val: val['x'])
-            }]
+            'key': '',
+            'values': results
+        }]
 
 class InMemoryLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None):
