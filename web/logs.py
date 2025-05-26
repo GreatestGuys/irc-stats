@@ -90,7 +90,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     message TEXT
                 )
             ''')
-            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_date ON logs (year, month, day)')
+            self.conn.execute('CREATE INDEX IF NOT EXISTS logs_idx_date ON logs (year, month, day)')
             #self.conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON logs (timestamp_day)')
 
     def _post_insert(self):
@@ -127,8 +127,8 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     AND all_days.day = logs.day
                 GROUP BY 1, 2, 3
             """,
-            "CREATE INDEX IF NOT EXISTS idx_date ON totals_fine (year, month, day)",
-            "CREATE INDEX IF NOT EXISTS idx_timestamp ON totals_fine (timestamp_day)",
+            "CREATE INDEX IF NOT EXISTS totals_fine_idx_date ON totals_fine (year, month, day)",
+            "CREATE INDEX IF NOT EXISTS totals_fine_idx_timestamp ON totals_fine (timestamp_day)",
             """
             CREATE TABLE IF NOT EXISTS totals_coarse AS
                 SELECT
@@ -144,8 +144,8 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     AND all_days.day = logs.day
                 GROUP BY 1, 2, 3
             """,
-            "CREATE INDEX IF NOT EXISTS idx_date ON totals_coarse (year, month, day)",
-            "CREATE INDEX IF NOT EXISTS idx_timestamp ON totals_coarse (timestamp_day)",
+            "CREATE INDEX IF NOT EXISTS totals_coarse_idx_date ON totals_coarse (year, month, day)",
+            "CREATE INDEX IF NOT EXISTS totals_coarse_idx_timestamp ON totals_coarse (timestamp_day)",
         ]
         with self.conn:
             for query in queries:
@@ -203,29 +203,40 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         # If methods directly query the DB, this might be a no-op or clear specific caches if implemented.
         pass
 
-    def query_logs(self, s,
-            cumulative=False, coarse=False, nick=None, ignore_case=False,
-            normalize=False, normalize_type=None):
+    def _prepare_sql_filters(self, s, ignore_case, nick, log_table='logs'):
         sql_params = []
         conditions = []
 
-        # Prepare pattern for SQLite regexp: pattern first, then text.
-        # Prepend (?i) for case-insensitivity with PCRE-like regex engines (sqlite-regex uses PCRE)
-        current_pattern = f"(?i){s}" if ignore_case else s
-        conditions.append("regexp(?, message)")
-        sql_params.append(current_pattern)
+        try:
+            re.compile(s)
+            current_pattern = f"(?i){s}" if ignore_case else s
+            conditions.append(f"regexp(?, {log_table}.message)")
+            sql_params.append(current_pattern)
+        except re.error as e_re:
+            app.logger.warning(f"Invalid Python regex syntax for pattern '{s}': {e_re}")
+            return [], [], True
 
         if nick:
             if nick in VALID_NICKS:
                 nick_aliases = VALID_NICKS[nick]
-                if not nick_aliases:
-                     return 0 # Should not happen if nick is a valid key and VALID_NICKS is well-formed
-                placeholders = ', '.join('?' * len(nick_aliases))
-                # Using lower(nick) in SQL for case-insensitive matching.
-                conditions.append(f"lower(nick) IN ({placeholders})")
-                sql_params.extend([alias.lower() for alias in nick_aliases]) # Ensure aliases are lowercase for comparison
-            else: # Unknown nick key
-                return {}
+                if nick_aliases:
+                    placeholders = ', '.join('?' * len(nick_aliases))
+                    conditions.append(f"lower({log_table}.nick) IN ({placeholders})")
+                    sql_params.extend([alias.lower() for alias in nick_aliases])
+                else:
+                    return [], [], True
+            else:
+                return [], [], True
+
+        return sql_params, conditions, False
+
+    def query_logs(self, s,
+            cumulative=False, coarse=False, nick=None, ignore_case=False,
+            normalize=False, normalize_type=None):
+        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
+
+        if has_error:
+            return {}
 
         sql_str = f"""
         WITH
@@ -316,48 +327,19 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         return results
 
     def count_occurrences(self, s, ignore_case=False, nick=None):
-        sql_params = []
-        conditions = []
+        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
 
-        # Validate basic Python regex syntax first
-        try:
-            re.compile(s)
-        except re.error as e_re:
-            app.logger.warning(f"Invalid Python regex syntax for pattern '{s}': {e_re}")
+        if has_error:
             return 0
 
-        # Prepare pattern for SQLite regexp: pattern first, then text.
-        # Prepend (?i) for case-insensitivity with PCRE-like regex engines (sqlite-regex uses PCRE)
-        current_pattern = f"(?i){s}" if ignore_case else s
-        conditions.append("regexp(?, message)")
-        sql_params.append(current_pattern)
-
-        if nick:
-            if nick in VALID_NICKS:
-                nick_aliases = VALID_NICKS[nick]
-                if not nick_aliases:
-                     return 0 # Should not happen if nick is a valid key and VALID_NICKS is well-formed
-                placeholders = ', '.join('?' * len(nick_aliases))
-                # Using lower(nick) in SQL for case-insensitive matching.
-                conditions.append(f"lower(nick) IN ({placeholders})")
-                sql_params.extend([alias.lower() for alias in nick_aliases]) # Ensure aliases are lowercase for comparison
-            else: # Unknown nick key
-                return 0
-
-        sql_str = "SELECT COUNT(*) FROM logs"
-        if conditions:
-            sql_str += " WHERE " + " AND ".join(conditions)
+        sql_str = "SELECT COUNT(*) FROM logs WHERE " + " AND ".join(conditions)
 
         cursor = self.conn.cursor()
         try:
             cursor.execute(sql_str, sql_params)
         except sqlite3.OperationalError as e_sqlite: # Renamed e to e_sqlite for clarity
-            if "no such function: regexp" in str(e_sqlite).lower():
-                app.logger.error("ERROR: Native regexp function not available in SQLite for count_occurrences. SQLite regex extension not loaded correctly or missing.")
-                return 0
-            else:
-                app.logger.error(f"SQL error in count_occurrences: {e_sqlite} with SQL: {sql_str} and params: {sql_params}")
-                return 0
+            app.logger.error(f"SQL error in count_occurrences: {e_sqlite} with SQL: {sql_str} and params: {sql_params}")
+            return 0
 
         result = cursor.fetchone()
         return result[0] if result else 0
@@ -407,13 +389,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         day, using SQL.
         """
         sql = """
-            SELECT
-                   CAST(strftime('%Y', timestamp, 'unixepoch') AS INTEGER) as year,
-                   CAST(strftime('%m', timestamp, 'unixepoch') AS INTEGER) as month,
-                   CAST(strftime('%d', timestamp, 'unixepoch') AS INTEGER) as day,
-                   timestamp,
-                   nick,
-                   message
+            SELECT year, month, day, timestamp, nick, message
             FROM logs
             ORDER BY timestamp
         """
@@ -431,27 +407,44 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
     def search_day_logs(self, s, ignore_case=False):
         """
         Return a list of matching log lines of the form:
-                ((year, month, day), index, line)
+                ((year, month, day), index, {timestamp, nick, message}, match_start, match_end)
         This implementation will fetch logs by day and then process them,
         similar to InMemoryLogQueryEngine to keep output structure.
         """
-        flags = re.IGNORECASE if ignore_case else 0
-        try:
-            r = re.compile(s, flags=flags)
-        except re.error:
+        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, None, log_table='this_log')
+
+        if has_error:
             return []
 
-        results = []
-        # get_logs_by_day() for SQLiteLogQueryEngine fetches from DB
-        day_logs = self.get_logs_by_day()
+        flags = ignore_case and re.IGNORECASE or 0
+        try: r = re.compile(s, flags=flags)
+        except: return []
 
-        for day in reversed(sorted(day_logs.keys())):
-            index = 0
-            for line in day_logs[day]: # line is a dict {'timestamp':..., 'nick':..., 'message':...}
-                m = r.search(line['message'])
-                if m is not None:
-                    results.append((day, index, line, m.start(), m.end()))
-                index += 1
+        sql = f"""
+            SELECT
+                this_log.year,
+                this_log.month,
+                this_log.day,
+                ROW_NUMBER() OVER (PARTITION BY this_log.year, this_log.month, this_log.day ORDER BY this_log.timestamp ASC) - 1 AS day_index,
+                this_log.timestamp,
+                this_log.nick,
+                this_log.message
+            FROM logs AS this_log
+            WHERE {' AND '.join(conditions)}
+            GROUP BY 1, 2, 3, 5, 6, 7
+            ORDER BY this_log.timestamp DESC
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(sql, sql_params)
+
+        results = []
+        for row in cursor.fetchall():
+            date = (row[0], row[1], row[2])
+            index = row[3]
+            line = {'timestamp': row[4], 'nick': row[5], 'message': row[6]}
+            m = r.search(line['message'])
+            if m != None:
+                results.append((date, index, line, m.start(), m.end()))
         return results
 
     def search_results_to_chart(self, s, ignore_case=False):

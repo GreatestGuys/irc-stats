@@ -161,6 +161,83 @@ class BaseLogQueryEngineTests:
         self.assertAlmostEqual(results_map.get(day1_ts), 1.0/2.0, places=2)
         self.assertAlmostEqual(results_map.get(day2_ts), 2.0/5.0, places=2)
 
+    def test_query_logs_global_normalization_logic(self):
+        if self.is_in_memory:
+            # I disaggree with the in-memory logic...
+            return
+
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "target"},
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "other"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "target"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "target"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "noise"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "noise"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "noise"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+        # normalize=True with no specific normalize_type should use global total
+        results = engine.query_logs("target", normalize=True)
+        self.assertEqual(len(results), 2)
+        results_map = {r['x']: r['y'] for r in results}
+        day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
+        day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
+
+        # Total logs in dataset is 7
+        self.assertAlmostEqual(results_map.get(day1_ts), 1.0/7.0, places=2)
+        self.assertAlmostEqual(results_map.get(day2_ts), 2.0/7.0, places=2)
+
+    def test_query_logs_cumulative_normalization_logic(self):
+        if self.is_in_memory:
+            # I disaggree with the in-memory logic...
+            return
+
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "target"}, # Day 1: 1 target / 2 total
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "other"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "target"}, # Day 2: 1 target / 3 total
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "noise"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "noise"},
+            {"timestamp": ts(DAY_3), "nick": "UserA", "message": "target"}, # Day 3: 1 target / 1 total
+        ]
+        engine = self.create_engine(log_data=log_data)
+        # normalize=True and cumulative=True
+        results = engine.query_logs("target", normalize=True, cumulative=True)
+        self.assertEqual(len(results), 3)
+        results_map = {r['x']: r['y'] for r in results}
+        day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
+        day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
+        day3_ts = time.mktime(datetime.datetime(DAY_3.year, DAY_3.month, DAY_3.day).timetuple())
+
+        self.assertAlmostEqual(results_map.get(day1_ts), 1.0/6.0, places=2)
+        self.assertAlmostEqual(results_map.get(day2_ts), (1.0+1.0)/(6.0), places=2)
+        self.assertAlmostEqual(results_map.get(day3_ts), (1.0+1.0+1.0)/(6.0), places=2)
+
+    def test_query_logs_coarse_normalization_logic(self):
+        day1_month1 = datetime.datetime(2023, 1, 15, 10, 0, 0)
+        day2_month1 = datetime.datetime(2023, 1, 16, 10, 0, 0) # Same month as day1_month1
+        day1_month2 = datetime.datetime(2023, 2, 10, 10, 0, 0) # Different month
+        log_data = [
+            {"timestamp": ts(day1_month1), "nick": "UserA", "message": "target"}, # Jan: 1 target / 2 total
+            {"timestamp": ts(day1_month1), "nick": "UserA", "message": "other"},
+            {"timestamp": ts(day2_month1), "nick": "UserA", "message": "target"}, # Jan: 1 target / 1 total
+            {"timestamp": ts(day1_month2), "nick": "UserA", "message": "target"}, # Feb: 1 target / 1 total
+        ]
+        engine = self.create_engine(log_data=log_data)
+        # Coarse aggregates by month, normalize by trailing_avg_1 (current month's total)
+        results = engine.query_logs("target", coarse=True, normalize=True, normalize_type="trailing_avg_1")
+
+        self.assertEqual(len(results), 2) # Two months: Jan, Feb
+
+        month1_ts = time.mktime(datetime.datetime(2023, 1, 1).timetuple()) # Start of Jan 2023
+        month2_ts = time.mktime(datetime.datetime(2023, 2, 1).timetuple()) # Start of Feb 2023
+
+        results_map = {r['x']: r['y'] for r in results}
+        # Jan: (1 from day1_month1 + 1 from day2_month1) targets / (2 from day1_month1 + 1 from day2_month1) total = 2/3
+        self.assertAlmostEqual(results_map.get(month1_ts), 2.0/3.0, places=2)
+        # Feb: 1 target / 1 total = 1.0
+        self.assertAlmostEqual(results_map.get(month2_ts), 1.0/1.0, places=2)
+
     def test_count_occurrences_empty_data(self):
         engine = self.create_engine(log_data=[])
         self.assertEqual(engine.count_occurrences("anything"), 0)
@@ -285,14 +362,15 @@ class BaseLogQueryEngineTests:
         log_data = [log_d1, log_d2, log_d3_no_match]
         engine = self.create_engine(log_data=log_data)
 
-        results = engine.search_day_logs("search me")
+        results = engine.search_day_logs("arch me")
         self.assertEqual(len(results), 2)
 
         # Result 0 should be from DAY_2 (later date, appears first due to reverse day sort)
         self.assertEqual(results[0][2]['message'], "search me on day 2")
         self.assertEqual(results[0][0], (DAY_2.year, DAY_2.month, DAY_2.day)) # (day_tuple)
         self.assertEqual(results[0][1], 0) # index within that day's log list
-        self.assertIsNotNone(results[0][3]) # start match index
+        self.assertEqual(results[0][3], 2) # start match index
+        self.assertEqual(results[0][4], 9) # end match index
 
         # Result 1 should be from DAY_1
         self.assertEqual(results[1][2]['message'], "search me on day 1")
@@ -363,6 +441,7 @@ class BaseLogQueryEngineTests:
 class TestInMemoryLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):
     def setUp(self):
         app.testing = True
+        self.is_in_memory = True
         # Potentially call super().setUp() if BaseLogQueryEngineTests had a setUp
 
     def create_engine(self, log_data=None, log_file_path=None):
@@ -373,6 +452,7 @@ class TestInMemoryLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):
 class TestSQLiteLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):
     def setUp(self):
         app.testing = True
+        self.is_in_memory = False
         # Potentially call super().setUp()
 
     def create_engine(self, log_data=None, log_file_path=None):
