@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import sqlite_regex
+import ijson
 import time
 
 from web import app, APP_STATIC
@@ -148,8 +149,23 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 self.conn.execute(query)
 
     def _load_data(self, log_file_path, log_data):
+        def load_json_in_batches(file_path):
+            with open(file_path, 'rb') as f:
+                batch = []
+                for record in ijson.items(f, 'item'):
+                    batch.append({
+                        'timestamp': record['timestamp'],
+                        'nick': record['nick'],
+                        'message': record['message'],
+                    })
+                    if len(batch) >= self.batch_size:
+                        yield batch
+                        batch = []
+                if len(batch) > 0:
+                    yield batch
+
         if log_data is not None: # Corrected condition
-            logs_to_insert = log_data
+            logs_to_insert = [log_data]
         else:
             chosen_log_path = None
             if app.testing:
@@ -161,23 +177,11 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             else:
                 chosen_log_path = os.path.join(APP_STATIC, 'log.json')
 
-            try:
-                with open(chosen_log_path, 'r') as f:
-                    logs_to_insert = json.load(f)
-            except FileNotFoundError:
-                if app.testing and chosen_log_path == os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tests', 'test_log_sample.json')):
-                    raise FileNotFoundError(f"Test log file not found during testing: {chosen_log_path}")
-                elif not (app.testing or self.log_file_path):
-                    logs_to_insert = [] # Default to empty if default production path is missing
-                else:
-                    if not app.testing:
-                        raise
-                    logs_to_insert = [] # Or handle as an error more explicitly if a specific path was given
+            logs_to_insert = load_json_in_batches(chosen_log_path)
 
         if logs_to_insert:
             with self.conn:
-                for i in range(0, len(logs_to_insert), self.batch_size):
-                    batch = logs_to_insert[i:i + self.batch_size]
+                for batch in logs_to_insert:
                     self.conn.executemany(
                         '''
                         INSERT INTO logs (timestamp, year, month, day, timestamp_day, nick, message)
@@ -195,8 +199,6 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     )
 
     def clear_all_caches(self):
-        # For SQLite, lru_cache might not be used in the same way.
-        # If methods directly query the DB, this might be a no-op or clear specific caches if implemented.
         pass
 
     def _prepare_sql_filters(self, s, ignore_case, nick, log_table='logs'):
