@@ -48,7 +48,7 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_logs_by_day(self):
+    def get_logs_by_day(self, year, month, day):
         pass
 
     @abc.abstractmethod
@@ -355,26 +355,45 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         cursor.execute(sql)
         return [tuple(row) for row in cursor.fetchall()]
 
-    def get_logs_by_day(self):
+    def get_logs_by_day(self, year, month, day):
         """
-        Return a map from (year, month, day) tuples to log lines occurring on that
-        day, using SQL.
+        Return a tuple: (current_day_logs, prev_day_tuple, next_day_tuple)
+        - current_day_logs: A list of log entries for the specified (year, month, day).
+        - prev_day_tuple: A (year, month, day) tuple for the previous day with logs, or None.
+        - next_day_tuple: A (year, month, day) tuple for the next day with logs, or None.
         """
+        # Get all valid days and sort them
+        all_valid_days = self.get_valid_days()
+
+        current_day_tuple = (year, month, day)
+        current_day_logs = []
+        prev_day_tuple = None
+        next_day_tuple = None
+
+        try:
+            idx = all_valid_days.index(current_day_tuple)
+            if idx > 0:
+                prev_day_tuple = all_valid_days[idx - 1]
+            if idx < len(all_valid_days) - 1:
+                next_day_tuple = all_valid_days[idx + 1]
+        except ValueError:
+            # If the requested day is not in valid_days, it means there are no logs for that day.
+            # In this case, current_day_logs will be empty, and prev/next will remain None.
+            pass
+
         sql = """
-            SELECT year, month, day, timestamp, nick, message
+            SELECT timestamp, nick, message
             FROM logs
+            WHERE year = ? AND month = ? AND day = ?
             ORDER BY timestamp
         """
         cursor = self.conn.cursor()
-        cursor.execute(sql)
+        cursor.execute(sql, (year, month, day))
 
-        days = {}
         for row in cursor.fetchall():
-            key = (row[0], row[1], row[2])
-            if key not in days:
-                days[key] = []
-            days[key].append({'timestamp': row[3], 'nick': row[4], 'message': row[5]})
-        return days
+            current_day_logs.append({'timestamp': float(row[0]), 'nick': row[1], 'message': row[2]})
+
+        return (current_day_logs, prev_day_tuple, next_day_tuple)
 
     def search_day_logs(self, s, ignore_case=False):
         """
@@ -495,6 +514,20 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         self.get_logs_by_day.cache_clear()
         self.search_day_logs.cache_clear()
         self.search_results_to_chart.cache_clear()
+
+    @functools.lru_cache(maxsize=1)
+    def _get_all_logs_by_day(self):
+        """
+        Return a dictionary mapping (year, month, day) tuples to lists of log entries for that day.
+        """
+        logs_by_day = {}
+        for line in self.logs:
+            dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
+            day_tuple = (dt.year, dt.month, dt.day)
+            if day_tuple not in logs_by_day:
+                logs_by_day[day_tuple] = []
+            logs_by_day[day_tuple].append(line)
+        return logs_by_day
 
     @functools.lru_cache(maxsize=1000)
     def query_logs(self, s,
@@ -626,7 +659,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         Return a list of (year, month, day) tuples where there is at least one
         log entry for that day
         """
-        return sorted(self.get_logs_by_day().keys())
+        return sorted(self._get_all_logs_by_day().keys())
 
     @functools.lru_cache(maxsize=1)
     def get_all_days(self):
@@ -651,20 +684,40 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
             current_time += datetime.timedelta(days=1)
         return all_days_list
 
-    @functools.lru_cache(maxsize=1)
-    def get_logs_by_day(self):
+    @functools.lru_cache(maxsize=1000)
+    def get_logs_by_day(self, year, month, day):
         """
-        Return a map from (year, month, day) tuples to log lines occurring on that
-        day.
+        Return a tuple: (current_day_logs, prev_day_tuple, next_day_tuple)
+        - current_day_logs: A list of log entries for the specified (year, month, day).
+        - prev_day_tuple: A (year, month, day) tuple for the previous day with logs, or None.
+        - next_day_tuple: A (year, month, day) tuple for the next day with logs, or None.
         """
-        days = {}
+        # Get all valid days and sort them
+        all_valid_days = self.get_valid_days()
+
+        current_day_tuple = (year, month, day)
+        current_day_logs = []
+        prev_day_tuple = None
+        next_day_tuple = None
+
+        try:
+            idx = all_valid_days.index(current_day_tuple)
+            if idx > 0:
+                prev_day_tuple = all_valid_days[idx - 1]
+            if idx < len(all_valid_days) - 1:
+                next_day_tuple = all_valid_days[idx + 1]
+        except ValueError:
+            # If the requested day is not in valid_days, it means there are no logs for that day.
+            # In this case, current_day_logs will be empty, and prev/next will remain None.
+            pass
+
+        # Filter logs for the current day
         for line in self.logs:
             dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
-            key = (dt.year, dt.month, dt.day)
-            if key not in days:
-                days[key] = []
-            days[key].append(line)
-        return days
+            if (dt.year, dt.month, dt.day) == current_day_tuple:
+                current_day_logs.append(line)
+
+        return (current_day_logs, prev_day_tuple, next_day_tuple)
 
     @functools.lru_cache(maxsize=1000)
     def search_day_logs(self, s, ignore_case=False):
@@ -677,7 +730,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         except: return []
 
         results = []
-        day_logs = self.get_logs_by_day()
+        day_logs = self._get_all_logs_by_day()
         for day in reversed(sorted(day_logs.keys())):
             index = 0
             for line in day_logs[day]:

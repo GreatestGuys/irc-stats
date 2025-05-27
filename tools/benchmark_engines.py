@@ -63,6 +63,11 @@ REPRESENTATIVE_QUERIES = [
         "query_args": {}
     },
     {
+        "name": "get_logs_by_day_specific",
+        "method_to_call": "get_logs_by_day",
+        "query_args": {"year": 2019, "month": 6, "day": 15}
+    },
+    {
         "name": "search_day_logs_simple",
         "method_to_call": "search_day_logs",
         "query_args": {"s": "database"} # "database" is in VOCABULARY

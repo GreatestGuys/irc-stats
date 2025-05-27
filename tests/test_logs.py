@@ -12,7 +12,7 @@ from web import app # To set app.testing
 
 # Helper to create timestamp strings from datetime objects
 def ts(dt_obj):
-    return str(time.mktime(dt_obj.timetuple()))
+    return time.mktime(dt_obj.timetuple())
 
 BASE_DATE = datetime.datetime(2023, 3, 15, 10, 0, 0)
 DAY_1 = BASE_DATE
@@ -281,55 +281,61 @@ class BaseLogQueryEngineTests:
 
 
     def test_get_logs_by_day(self):
-        log_d1_1 = {"timestamp": ts(DAY_1), "nick": "UserA", "message": "d1m1"}
-        log_d1_2 = {"timestamp": ts(DAY_1), "nick": "UserB", "message": "d1m2"} # Same day, different time or data
-        log_d2_1 = {"timestamp": ts(DAY_2), "nick": "UserA", "message": "d2m1"}
-        # For SQLite, ensure timestamps are distinct enough if they affect order within the day, though get_logs_by_day structure might not show it.
-        # The test data is simple enough that string representation of DAY_1 will be the same for log_d1_1 and log_d1_2.
-        # The engines should preserve the order of logs as received for a given day if timestamps are identical, or sort by timestamp.
-        # The current InMemory implementation preserves order from original list for same-day logs. SQLite sorts by timestamp.
-        # Let's make timestamps slightly different to ensure SQLite ordering is tested if it matters.
-        log_d1_1_ts = DAY_1
-        log_d1_2_ts = DAY_1 + datetime.timedelta(seconds=1)
-        log_d1_1 = {"timestamp": ts(log_d1_1_ts), "nick": "UserA", "message": "d1m1"}
-        log_d1_2 = {"timestamp": ts(log_d1_2_ts), "nick": "UserB", "message": "d1m2"}
+        # Define specific dates for testing
+        day_before_base = BASE_DATE - datetime.timedelta(days=1)
+        day_after_base = BASE_DATE + datetime.timedelta(days=1)
+        day_two_after_base = BASE_DATE + datetime.timedelta(days=2)
 
-        log_data = [log_d1_1, log_d1_2, log_d2_1] # Original order
+        log_data = [
+            {"timestamp": ts(BASE_DATE), "nick": "UserA", "message": "log on base date 1"},
+            {"timestamp": ts(BASE_DATE + datetime.timedelta(seconds=1)), "nick": "UserB", "message": "log on base date 2"},
+            {"timestamp": ts(day_after_base), "nick": "UserC", "message": "log on day after base"},
+            {"timestamp": ts(day_two_after_base), "nick": "UserD", "message": "log on two days after base"},
+        ]
         engine = self.create_engine(log_data=log_data)
 
-        logs_by_day = engine.get_logs_by_day()
-        key_d1 = (DAY_1.year, DAY_1.month, DAY_1.day)
-        key_d2 = (DAY_2.year, DAY_2.month, DAY_2.day)
+        # Helper to create day tuple
+        def get_day_tuple(dt_obj):
+            return (dt_obj.year, dt_obj.month, dt_obj.day)
 
-        self.assertIn(key_d1, logs_by_day)
-        self.assertIn(key_d2, logs_by_day)
-        self.assertEqual(len(logs_by_day[key_d1]), 2)
-        self.assertEqual(len(logs_by_day[key_d2]), 1)
-
-        # Prepare expected data
-        expected_d1_logs_orig = [log_d1_1, log_d1_2]
-        expected_d2_logs_orig = [log_d2_1]
-
-        # Sort key function
+        # Sort key function for logs
         def sort_key(log_entry):
-            # Convert to float for sorting, as SQLite returns floats (REAL)
             return float(log_entry['timestamp'])
 
-        # Sort retrieved logs (SQLite already sorts by timestamp, but good practice)
-        retrieved_d1_logs_sorted = sorted(logs_by_day.get(key_d1, []), key=sort_key)
-        retrieved_d2_logs_sorted = sorted(logs_by_day.get(key_d2, []), key=sort_key)
+        # Test for the first day in the dataset (BASE_DATE)
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            BASE_DATE.year, BASE_DATE.month, BASE_DATE.day
+        )
+        self.assertEqual(len(current_day_logs), 2)
+        self.assertEqual(sorted(current_day_logs, key=sort_key), sorted([log_data[0], log_data[1]], key=sort_key))
+        self.assertIsNone(prev_day_tuple)
+        self.assertEqual(next_day_tuple, (DAY_2.year, DAY_2.month, DAY_2.day))
 
-        if isinstance(engine, SQLiteLogQueryEngine):
-            # Convert expected timestamps to float for SQLite comparison and sort
-            expected_d1_logs_for_comparison = sorted([{**log, 'timestamp': float(log['timestamp'])} for log in expected_d1_logs_orig], key=sort_key)
-            expected_d2_logs_for_comparison = sorted([{**log, 'timestamp': float(log['timestamp'])} for log in expected_d2_logs_orig], key=sort_key)
-        else:
-            # For InMemory, expect string timestamps and sort original list
-            expected_d1_logs_for_comparison = sorted(expected_d1_logs_orig, key=sort_key)
-            expected_d2_logs_for_comparison = sorted(expected_d2_logs_orig, key=sort_key)
+        # Test for a middle day (day_after_base)
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            day_after_base.year, day_after_base.month, day_after_base.day
+        )
+        self.assertEqual(len(current_day_logs), 1)
+        self.assertEqual(sorted(current_day_logs, key=sort_key), sorted([log_data[2]], key=sort_key))
+        self.assertEqual(prev_day_tuple, get_day_tuple(BASE_DATE))
+        self.assertEqual(next_day_tuple, get_day_tuple(day_two_after_base))
 
-        self.assertEqual(retrieved_d1_logs_sorted, expected_d1_logs_for_comparison)
-        self.assertEqual(retrieved_d2_logs_sorted, expected_d2_logs_for_comparison)
+        # Test for the last day in the dataset (day_two_after_base)
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            day_two_after_base.year, day_two_after_base.month, day_two_after_base.day
+        )
+        self.assertEqual(len(current_day_logs), 1)
+        self.assertEqual(sorted(current_day_logs, key=sort_key), sorted([log_data[3]], key=sort_key))
+        self.assertEqual(prev_day_tuple, get_day_tuple(day_after_base))
+        self.assertIsNone(next_day_tuple)
+
+        # Test for a day with no logs
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            day_before_base.year, day_before_base.month, day_before_base.day
+        )
+        self.assertEqual(len(current_day_logs), 0)
+        self.assertIsNone(prev_day_tuple) # No previous day in data
+        self.assertIsNone(next_day_tuple) # Next day is BASE_DATE
 
     def test_search_day_logs_ordering_and_content(self):
         # Timestamps need to be distinct for reliable ordering in SQLite if that's relied upon.
@@ -427,6 +433,34 @@ class TestInMemoryLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):
         app.testing = True
         self.is_in_memory = True
         # Potentially call super().setUp() if BaseLogQueryEngineTests had a setUp
+
+    def test_get_logs_by_day_specific_scenario(self):
+        # This test specifically addresses the scenario outlined in the instructions
+        # for InMemoryLogQueryEngine regarding prev_day_tuple and next_day_tuple.
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "log on day 1"},
+            {"timestamp": ts(DAY_2), "nick": "UserB", "message": "log on day 2"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+
+        def get_day_tuple(dt_obj):
+            return (dt_obj.year, dt_obj.month, dt_obj.day)
+
+        # Test for DAY_1
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            DAY_1.year, DAY_1.month, DAY_1.day
+        )
+        self.assertEqual(len(current_day_logs), 1)
+        self.assertIsNone(prev_day_tuple)
+        self.assertEqual(next_day_tuple, get_day_tuple(DAY_2))
+
+        # Test for DAY_2
+        current_day_logs, prev_day_tuple, next_day_tuple = engine.get_logs_by_day(
+            DAY_2.year, DAY_2.month, DAY_2.day
+        )
+        self.assertEqual(len(current_day_logs), 1)
+        self.assertEqual(prev_day_tuple, get_day_tuple(DAY_1))
+        self.assertIsNone(next_day_tuple)
 
     def create_engine(self, log_data=None, log_file_path=None):
         # app.testing must be True for InMemoryLogQueryEngine to use test_log_sample.json by default

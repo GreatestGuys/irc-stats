@@ -44,19 +44,7 @@ def browse():
 def browse_day(year, month, day):
     r = re.compile('(https?://\\S+)', flags=re.IGNORECASE)
 
-    day_logs = log_engine.get_logs_by_day()
-    key = (year, month, day)
-    prev_day = None
-    next_day = None
-    lines = []
-    if key in day_logs:
-        keys = sorted(day_logs.keys())
-        lines = day_logs[key]
-        index = keys.index(key)
-        if index != 0:
-            prev_day = keys[index - 1]
-        if index < len(keys) - 1:
-            next_day = keys[index + 1]
+    lines, prev_day, next_day = log_engine.get_logs_by_day(year, month, day)
 
     # Find all the links in each line and mark them so that they can be rendered
     # as hyperlinks.
