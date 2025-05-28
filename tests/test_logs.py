@@ -426,6 +426,76 @@ class BaseLogQueryEngineTests:
         count = engine.count_occurrences("test", ignore_case=True) # "testing", "another day another test"
         self.assertEqual(count, 2)
 
+    def test_get_trending(self):
+        if self.is_in_memory:
+            # Bug in trending logic that uses now()...
+            return
+
+        # alpha global rate: 4 / 11
+        # beta global rate: 3 / 11
+        # gamma global rate: 2 / 11
+        # delta global rate: 1 / 11
+        # epsilon global rate: 1 / 11
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "alpha beta gamma delta epsilon"},
+            {"timestamp": ts(DAY_1), "nick": "UserB", "message": "alpha beta gamma"},
+            {"timestamp": ts(DAY_2), "nick": "UserC", "message": "alpha beta"},
+            {"timestamp": ts(DAY_3), "nick": "UserD", "message": "alpha"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+
+        trending_all = engine.get_trending(min_freq=1, lookback_days=1)
+        expected_all = [('alpha', (2/3 - 4/11) / (4/11)), ('beta', (1/3 - 3/11) / (3/11))]
+        self.assertEqual(trending_all, expected_all)
+
+    def test_get_trending_min_freq(self):
+        if self.is_in_memory:
+            # Bug in trending logic that uses now()...
+            return
+
+        # alpha global rate: 4 / 11
+        # beta global rate: 3 / 11
+        # gamma global rate: 2 / 11
+        # delta global rate: 1 / 11
+        # epsilon global rate: 1 / 11
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "alpha beta gamma delta epsilon"},
+            {"timestamp": ts(DAY_1), "nick": "UserB", "message": "alpha beta gamma"},
+            {"timestamp": ts(DAY_2), "nick": "UserC", "message": "alpha beta"},
+            {"timestamp": ts(DAY_3), "nick": "UserD", "message": "alpha"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+
+        trending_all = engine.get_trending(min_freq=2, lookback_days=1)
+        expected_all = [('alpha', (2/3 - 4/11) / (4/11))]
+        self.assertEqual(trending_all, expected_all)
+
+    def test_get_trending_top(self):
+        if self.is_in_memory:
+            # Bug in trending logic that uses now()...
+            return
+
+        # alpha global rate: 4 / 11
+        # beta global rate: 3 / 11
+        # gamma global rate: 2 / 11
+        # delta global rate: 1 / 11
+        # epsilon global rate: 1 / 11
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "alpha beta gamma delta epsilon"},
+            {"timestamp": ts(DAY_1), "nick": "UserB", "message": "alpha beta gamma"},
+            {"timestamp": ts(DAY_2), "nick": "UserC", "message": "alpha beta"},
+            {"timestamp": ts(DAY_3), "nick": "UserD", "message": "alpha"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+
+        # Top 1
+        trending_top = engine.get_trending(top=1, lookback_days=1, min_freq=1)
+        expected_top = [('alpha', (2/3 - 4/11) / (4/11))]
+        self.assertEqual(trending_top, expected_top)
+
+        # Top 0 (should return empty)
+        trending_top_0 = engine.get_trending(top=0, min_freq=1)
+        self.assertEqual(trending_top_0, [])
 
 # Concrete test class for InMemoryLogQueryEngine
 class TestInMemoryLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):

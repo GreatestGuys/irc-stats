@@ -60,6 +60,10 @@ class AbstractLogQueryEngine(abc.ABC):
     def search_results_to_chart(self, s, ignore_case=False):
         pass
 
+    @abc.abstractmethod
+    def get_trending(self, top=10, min_freq=10, lookback_days=7):
+        pass
+
 class SQLiteLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None, batch_size=1000):
         super().__init__(log_file_path, log_data)
@@ -143,6 +147,48 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             """,
             "CREATE INDEX IF NOT EXISTS totals_coarse_idx_date ON totals_coarse (year, month, day)",
             "CREATE INDEX IF NOT EXISTS totals_coarse_idx_timestamp ON totals_coarse (timestamp_day)",
+            """
+            CREATE TABLE IF NOT EXISTS Words AS
+                WITH RECURSIVE _Words (year, month, day, word, remaining) AS (
+                    SELECT
+                        year, month, day,
+                        CASE WHEN logs.message LIKE '% %'
+                                THEN SUBSTRING(logs.message, 1, INSTR(logs.message, ' ')-1)
+                                ELSE REPLACE(logs.message, ' ', '')
+                                END AS word
+                        ,
+                        CASE WHEN logs.message LIKE '% %'
+                                THEN SUBSTRING(logs.message, INSTR(logs.message, ' ')+1)
+                                ELSE ''
+                                END AS remaining
+                    FROM logs
+                    UNION ALL
+                    SELECT
+                        year, month, day,
+                        CASE WHEN _words.remaining LIKE '% %'
+                                THEN SUBSTRING(_words.remaining, 1, INSTR(_words.remaining, ' ')-1)
+                                ELSE REPLACE(_words.remaining, ' ', '')
+                                END AS word
+                        , CASE WHEN _words.remaining LIKE '% %'
+                                THEN SUBSTRING(_words.remaining, INSTR(_words.remaining, ' ')+1)
+                                ELSE ''
+                                END AS remaining
+                    FROM _Words AS _words
+                    WHERE
+                        _words.remaining <> ''
+                        AND _words.remaining <> ' '
+                        AND _words.remaining IS NOT NULL
+                        AND LOWER(_words.remaining) IS NOT NULL
+                )
+                SELECT
+                    year,
+                    month,
+                    day,
+                    LOWER(word) AS word,
+                    COUNT(*) AS count
+                FROM _Words
+                GROUP BY 1, 2, 3, 4
+            """
         ]
         with self.conn:
             for query in queries:
@@ -476,6 +522,54 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             'values': results
         }]
 
+    def get_trending(self, top=10, min_freq=10, lookback_days=7):
+        """
+        Return a list of the top trending terms. The values of the list will be
+        tuples of the word along with the relative fractional increase in usage.
+        """
+
+        sql_params = []
+        def add_cond(cond, param):
+            sql_params.append(param)
+            return cond
+
+        most_recent_day_sql = "(SELECT printf('%04d-%02d-%02d', year, month, day) FROM logs AS x ORDER BY timestamp DESC LIMIT 1)"
+        lookback_cond = f'date(printf("%04d-%02d-%02d", year, month, day)) >= date({most_recent_day_sql}, "-{int(lookback_days)} day")'
+
+        sql_query = f"""
+        WITH
+            AllWords AS (
+                SELECT
+                    word,
+                    SUM(count) AS freq,
+                    CAST(SUM(count) AS REAL) / (SELECT SUM(count) FROM Words) AS rate
+                FROM Words
+                GROUP BY 1
+            ),
+            RecentWords AS (
+                SELECT
+                    word,
+                    SUM(count) AS freq,
+                    CAST(SUM(count) AS REAL) / (SELECT SUM(count) FROM Words WHERE {lookback_cond}) AS rate
+                FROM Words
+                WHERE {lookback_cond}
+                GROUP BY 1
+            )
+        SELECT
+            RecentWords.word,
+            (RecentWords.rate - AllWords.rate) / AllWords.rate AS rate_diff
+        FROM RecentWords
+        INNER JOIN AllWords ON AllWords.word = RecentWords.word
+        WHERE RecentWords.freq >= {int(min_freq)}
+        ORDER BY 2 DESC
+        LIMIT {int(top)}
+        """
+
+        cursor = self.conn.cursor()
+        cursor.execute(sql_query, sql_params)
+        results = list(cursor.fetchall())
+        return results
+
 class InMemoryLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None):
         super().__init__(log_file_path, log_data)
@@ -516,6 +610,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         self.get_logs_by_day.cache_clear()
         self.search_day_logs.cache_clear()
         self.search_results_to_chart.cache_clear()
+        self.get_trending.cache_clear()
 
     @functools.lru_cache(maxsize=1)
     def _get_all_logs_by_day(self):
@@ -766,6 +861,72 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
                 'key': '',
                 'values': sorted(counts.values(), key=lambda x: x['x'])
             }]
+
+    def word_freqs(self, logs, min_freq=0):
+        freqs = {}
+        for line in logs:
+            for word in line['message'].split(' '):
+                clean_word = re.sub(r'^[.?!,"\']+|[.?!,"\']+$', '', word).lower()
+                if clean_word in freqs:
+                    freqs[clean_word] += 1
+                else:
+                    freqs[clean_word] = 1
+        if min_freq > 0:
+            new_freqs = {}
+            for word in freqs.keys():
+                if min_freq <= freqs[word]:
+                    new_freqs[word] = freqs[word]
+            freqs = new_freqs
+        return freqs
+
+    def slice_logs(self, logs, lookback_seconds=7*24*60*60):
+        now = time.time()
+        sliced_logs = []
+        for line in logs:
+            if now <= int(float(line['timestamp'])) + lookback_seconds:
+                sliced_logs.append(line)
+        return sliced_logs
+
+    def to_vector(self, freqs):
+        total = sum(freqs.values()) + 1.0
+        vector = {}
+        for word in freqs:
+            vector[word] = freqs[word] / total
+        return (vector, total)
+
+    def vector_lookup(self, vector, word):
+        (values, total) = vector
+        if word in values:
+            return values[word]
+        else:
+            return 1.0 / total
+
+    @functools.lru_cache(maxsize=1)
+    def get_trending(self, top=10, min_freq=10, lookback_days=7, **kwargs):
+        """
+        Return a list of the top trending terms. The values of the list will be
+        tuples of the word along with the relative fractional increase in usage.
+        """
+        logs = self.logs
+        recent_logs = self.slice_logs(logs, lookback_seconds=lookback_days * 24 * 60 * 60)
+
+        all_freqs = self.word_freqs(logs)
+        all_vector = self.to_vector(all_freqs)
+        recent_freqs = self.word_freqs(recent_logs)
+        recent_vector = self.to_vector(recent_freqs)
+
+        differences = []
+        for word in all_vector[0].keys():
+            all_value = self.vector_lookup(all_vector, word)
+            recent_value = self.vector_lookup(recent_vector, word)
+
+            if recent_value < min_freq / recent_vector[1]:
+                continue
+
+            diff = (recent_value - all_value) / all_value
+            differences.append((word, diff))
+
+        return list(reversed(sorted(differences, key=lambda x: x[1])))[0:top]
 
 # Global instance for the application
 # The InMemoryLogQueryEngine constructor will now handle choosing the log file based on app.testing

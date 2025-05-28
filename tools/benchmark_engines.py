@@ -77,6 +77,11 @@ REPRESENTATIVE_QUERIES = [
         "method_to_call": "search_results_to_chart",
         "query_args": {"s": "database", "ignore_case": True} # "database" is in VOCABULARY
     },
+    {
+        "name": "get_trending",
+        "method_to_call": "get_trending",
+        "query_args": {}
+    },
 ]
 
 def generate_dataset(size, data_gen_script_path, output_file_path, seed):
