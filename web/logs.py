@@ -65,9 +65,9 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
 class SQLiteLogQueryEngine(AbstractLogQueryEngine):
-    def __init__(self, log_file_path=None, log_data=None, batch_size=1000):
+    def __init__(self, log_file_path=None, log_data=None, batch_size=1000, db=':memory:'):
         super().__init__(log_file_path, log_data)
-        self.conn = sqlite3.connect(':memory:')
+        self.conn = sqlite3.connect(db, check_same_thread=False)
         self.batch_size = batch_size
 
         self.conn.enable_load_extension(True)
@@ -79,8 +79,18 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         self._post_insert()
 
     def _create_table(self):
-        with self.conn:
-            self.conn.execute('''
+        queries = [
+            'DROP TABLE IF EXISTS logs',
+            'DROP TABLE IF EXISTS all_days',
+            'DROP TABLE IF EXISTS totals_fine',
+            'DROP TABLE IF EXISTS totals_coarse',
+            'DROP TABLE IF EXISTS Words',
+            'DROP INDEX IF EXISTS logs_idx_date',
+            'DROP INDEX IF EXISTS totals_fine_idx_date',
+            'DROP INDEX IF EXISTS totals_fine_idx_timestamp',
+            'DROP INDEX IF EXISTS totals_coarse_idx_date',
+            'DROP INDEX IF EXISTS totals_coarse_idx_timestamp',
+            '''
                 CREATE TABLE IF NOT EXISTS logs (
                     timestamp INTEGER,
                     year INTEGER,
@@ -90,9 +100,12 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     nick TEXT,
                     message TEXT
                 )
-            ''')
-            self.conn.execute('CREATE INDEX IF NOT EXISTS logs_idx_date ON logs (year, month, day)')
-            #self.conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON logs (timestamp_day)')
+            ''',
+            'CREATE INDEX IF NOT EXISTS logs_idx_date ON logs (year, month, day)',
+            ]
+        with self.conn:
+            for query in queries:
+                self.conn.execute(query)
 
     def _post_insert(self):
         queries = [
@@ -245,7 +258,10 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     )
 
     def clear_all_caches(self):
-        pass
+        self.query_logs.cache_clear()
+        self.count_occurrences.cache_clear()
+        self.get_valid_days.cache_clear()
+        self.get_trending.cache_clear()
 
     def _prepare_sql_filters(self, s, ignore_case, nick, log_table='logs'):
         sql_params = []
@@ -274,6 +290,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return sql_params, conditions, False
 
+    @functools.lru_cache(maxsize=10)
     def query_logs(self, s,
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
@@ -370,6 +387,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return results
 
+    @functools.lru_cache(maxsize=1000)
     def count_occurrences(self, s, ignore_case=False, nick=None):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
 
@@ -388,7 +406,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         result = cursor.fetchone()
         return result[0] if result else 0
 
-
+    @functools.lru_cache(maxsize=1)
     def get_valid_days(self):
         """
         Return a list of (year, month, day) tuples where there is at least one
@@ -522,6 +540,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             'values': results
         }]
 
+    @functools.lru_cache(maxsize=1)
     def get_trending(self, top=10, min_freq=10, lookback_days=7):
         """
         Return a list of the top trending terms. The values of the list will be
@@ -930,7 +949,8 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
 
 # Global instance for the application
 # The InMemoryLogQueryEngine constructor will now handle choosing the log file based on app.testing
-log_engine = InMemoryLogQueryEngine()
+# log_engine = InMemoryLogQueryEngine()
+log_engine = SQLiteLogQueryEngine(db='logs.db')
 
 # Functions exposed as template globals, using the log_engine instance
 @app.template_global()
