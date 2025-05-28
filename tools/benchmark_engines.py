@@ -150,16 +150,29 @@ def main():
                         help="Number of times to run each specific benchmark test for averaging.")
     parser.add_argument("--log-file", type=str,
                         help="Optional: Path to a specific log file to use instead of generating one.")
+    parser.add_argument("--compare-engines", type=str, default="InMemory,Sqlite-Memory",
+                        help="Comma-separated string of two engine types to compare (e.g., 'InMemory,Sqlite-Memory'). Options: InMemory, Sqlite-Memory, Sqlite-File.")
 
     args = parser.parse_args()
 
     app.testing = True # Set Flask app to testing mode
 
     dataset_sizes = [int(s.strip()) for s in args.dataset_sizes.split(',')]
-    engine_classes = {
-        "InMemory": InMemoryLogQueryEngine,
-        "SQLite": SQLiteLogQueryEngine
+    engine_options = {
+        "InMemory": {"class": InMemoryLogQueryEngine, "init_args": {}},
+        "Sqlite-Memory": {"class": SQLiteLogQueryEngine, "init_args": {"db": ':memory:'}},
+        "Sqlite-File": {"class": SQLiteLogQueryEngine, "init_args": {"db": "bench.db"}}
     }
+
+    selected_engine_names = [e.strip() for e in args.compare_engines.split(',')]
+    if len(selected_engine_names) != 2:
+        raise ValueError("Please specify exactly two engines to compare, separated by a comma (e.g., 'InMemory,Sqlite-Memory').")
+
+    engine_configs = {}
+    for name in selected_engine_names:
+        if name not in engine_options:
+            raise ValueError(f"Unknown engine type: {name}. Options are: {', '.join(engine_options.keys())}")
+        engine_configs[name] = engine_options[name]
 
     engine_run_results = [] # Store results from every single run for engines
     flask_app_run_results = [] # Store results from every single run for Flask app
@@ -185,7 +198,7 @@ def main():
                 continue
 
         try:
-            for engine_name, EngineClass in engine_classes.items():
+            for engine_name in engine_configs.keys():
                 print(f"\nBenchmarking {engine_name} with dataset size {size} (File: {temp_data_file})")
 
                 for run_num in range(1, args.runs_per_test + 1):
@@ -198,10 +211,15 @@ def main():
 
                     current_engine = None # Define before try block
                     try:
-                        if engine_name == "SQLite":
-                            current_engine = EngineClass(log_file_path=temp_data_file, batch_size=SQLITE_BATCH_SIZE)
-                        else:
-                            current_engine = EngineClass(log_file_path=temp_data_file)
+                        engine_config = engine_configs[engine_name]
+                        EngineClass = engine_config["class"]
+                        init_args = engine_config["init_args"].copy() # Copy to modify
+
+                        init_args["log_file_path"] = temp_data_file
+                        if EngineClass == SQLiteLogQueryEngine and "batch_size" not in init_args:
+                            init_args["batch_size"] = SQLITE_BATCH_SIZE
+
+                        current_engine = EngineClass(**init_args)
                     except Exception as e:
                         print(f"      ERROR instantiating {engine_name}: {e}", file=sys.stderr)
                         tracemalloc.stop()
@@ -269,10 +287,15 @@ def main():
                 # Temporarily replace the app's log_engine instance
                 original_app_log_engine_internal = web.logs._log_engine
                 try:
-                    if engine_name == "SQLite":
-                        web.logs._log_engine = SQLiteLogQueryEngine(log_file_path=temp_data_file, batch_size=SQLITE_BATCH_SIZE)
-                    else: # InMemory
-                        web.logs._log_engine = InMemoryLogQueryEngine(log_file_path=temp_data_file)
+                    engine_config = engine_configs[engine_name]
+                    EngineClass = engine_config["class"]
+                    init_args = engine_config["init_args"].copy()
+
+                    init_args["log_file_path"] = temp_data_file
+                    if EngineClass == SQLiteLogQueryEngine and "batch_size" not in init_args:
+                        init_args["batch_size"] = SQLITE_BATCH_SIZE
+
+                    web.logs._log_engine = EngineClass(**init_args)
 
                     with app.test_client() as client:
                         for run_num_flask in range(1, args.runs_per_test + 1):
@@ -385,10 +408,13 @@ def main():
         print(f"Error writing results to file: {e}", file=sys.stderr)
 
     # Print the summaries
-    print_summary(final_engine_results_summary, final_flask_app_results_summary)
+    print_summary(final_engine_results_summary, final_flask_app_results_summary, selected_engine_names)
 
-def print_summary(engine_results, flask_app_results):
+def print_summary(engine_results, flask_app_results, selected_engine_names):
     """Prints easy-to-read summaries of the benchmark results."""
+
+    engine1_name = selected_engine_names[0]
+    engine2_name = selected_engine_names[1]
 
     # Print Engine Summary
     print("\n--- Log Engine Benchmark Summary ---")
@@ -403,7 +429,7 @@ def print_summary(engine_results, flask_app_results):
 
     for size in sorted(engine_results_by_size.keys()):
         print(f"\nDataset Size: {size} entries")
-        print(f"{'Operation':<30} {'InMemory Time (s)':<20} {'SQLite Time (s)':<20} {'Time Delta (%)':<18} {'InMemory Mem (MB)':<20} {'SQLite Mem (MB)':<20} {'Mem Delta (%)':<18}")
+        print(f"{'Operation':<30} {engine1_name + ' Time (s)':<20} {engine2_name + ' Time (s)':<20} {'Time Delta (%)':<18} {engine1_name + ' Mem (MB)':<20} {engine2_name + ' Mem (MB)':<20} {'Mem Delta (%)':<18}")
         print(f"{'-'*30:<30} {'-'*20:<20} {'-'*20:<20} {'-'*18:<18} {'-'*20:<20} {'-'*20:<20} {'-'*18:<18}")
 
         operations_data = {}
@@ -414,21 +440,21 @@ def print_summary(engine_results, flask_app_results):
             operations_data[operation][r["engine"]] = r
 
         for operation in sorted(operations_data.keys()):
-            inmemory_res = operations_data[operation].get("InMemory")
-            sqlite_res = operations_data[operation].get("SQLite")
+            engine1_res = operations_data[operation].get(engine1_name)
+            engine2_res = operations_data[operation].get(engine2_name)
 
-            inmemory_time = inmemory_res["avg_time_seconds"] if inmemory_res else 0
-            inmemory_mem = (inmemory_res["avg_peak_memory_bytes"] / (1024 * 1024)) if inmemory_res else 0
-            sqlite_time = sqlite_res["avg_time_seconds"] if sqlite_res else 0
-            sqlite_mem = (sqlite_res["avg_peak_memory_bytes"] / (1024 * 1024)) if sqlite_res else 0
+            engine1_time = engine1_res["avg_time_seconds"] if engine1_res else 0
+            engine1_mem = (engine1_res["avg_peak_memory_bytes"] / (1024 * 1024)) if engine1_res else 0
+            engine2_time = engine2_res["avg_time_seconds"] if engine2_res else 0
+            engine2_mem = (engine2_res["avg_peak_memory_bytes"] / (1024 * 1024)) if engine2_res else 0
 
-            time_delta_percent = ((sqlite_time - inmemory_time) / inmemory_time * 100) if inmemory_time != 0 else float('inf')
-            mem_delta_percent = ((sqlite_mem - inmemory_mem) / inmemory_mem * 100) if inmemory_mem != 0 else float('inf')
+            time_delta_percent = ((engine2_time - engine1_time) / engine1_time * 100) if engine1_time != 0 else float('inf')
+            mem_delta_percent = ((engine2_mem - engine1_mem) / engine1_mem * 100) if engine1_mem != 0 else float('inf')
 
             time_delta_percent_str = f"{time_delta_percent:.2f}" if time_delta_percent != float('inf') else "INF"
             mem_delta_percent_str = f"{mem_delta_percent:.2f}" if mem_delta_percent != float('inf') else "INF"
 
-            print(f"{operation:<30} {inmemory_time:<20.4f} {sqlite_time:<20.4f} {time_delta_percent_str:<18} {inmemory_mem:<20.2f} {sqlite_mem:<20.2f} {mem_delta_percent_str:<18}")
+            print(f"{operation:<30} {engine1_time:<20.4f} {engine2_time:<20.4f} {time_delta_percent_str:<18} {engine1_mem:<20.2f} {engine2_mem:<20.2f} {mem_delta_percent_str:<18}")
     print("\n-------------------------")
 
 
@@ -444,7 +470,7 @@ def print_summary(engine_results, flask_app_results):
     for size in sorted(flask_app_results_by_size.keys()):
         print(f"\nDataset Size: {size} entries (Flask App)")
         # Header for Flask App benchmarks, comparing InMemory vs SQLite backend
-        print(f"{'Operation':<30} {'Flask App (InMemory) Time (s)':<30} {'Flask App (SQLite) Time (s)':<30} {'Time Delta (%)':<18} {'Flask App (InMemory) Mem (MB)':<30} {'Flask App (SQLite) Mem (MB)':<30} {'Mem Delta (%)':<18}")
+        print(f"{'Operation':<30} {'Flask App (' + engine1_name + ') Time (s)':<30} {'Flask App (' + engine2_name + ') Time (s)':<30} {'Time Delta (%)':<18} {'Flask App (' + engine1_name + ') Mem (MB)':<30} {'Flask App (' + engine2_name + ') Mem (MB)':<30} {'Mem Delta (%)':<18}")
         print(f"{'-'*30:<30} {'-'*30:<30} {'-'*30:<30} {'-'*18:<18} {'-'*30:<30} {'-'*30:<30} {'-'*18:<18}")
 
         operations_data = {}
@@ -455,21 +481,21 @@ def print_summary(engine_results, flask_app_results):
             operations_data[operation][r["engine"]] = r # Key will be "Flask_App_with_InMemory" or "Flask_App_with_SQLite"
 
         for operation in sorted(operations_data.keys()):
-            flask_inmemory_res = operations_data[operation].get("Flask_App_with_InMemory")
-            flask_sqlite_res = operations_data[operation].get("Flask_App_with_SQLite")
+            flask_engine1_res = operations_data[operation].get(f"Flask_App_with_{engine1_name}")
+            flask_engine2_res = operations_data[operation].get(f"Flask_App_with_{engine2_name}")
 
-            flask_inmemory_time = flask_inmemory_res["avg_time_seconds"] if flask_inmemory_res else 0
-            flask_inmemory_mem = (flask_inmemory_res["avg_peak_memory_bytes"] / (1024 * 1024)) if flask_inmemory_res else 0
-            flask_sqlite_time = flask_sqlite_res["avg_time_seconds"] if flask_sqlite_res else 0
-            flask_sqlite_mem = (flask_sqlite_res["avg_peak_memory_bytes"] / (1024 * 1024)) if flask_sqlite_res else 0
+            flask_engine1_time = flask_engine1_res["avg_time_seconds"] if flask_engine1_res else 0
+            flask_engine1_mem = (flask_engine1_res["avg_peak_memory_bytes"] / (1024 * 1024)) if flask_engine1_res else 0
+            flask_engine2_time = flask_engine2_res["avg_time_seconds"] if flask_engine2_res else 0
+            flask_engine2_mem = (flask_engine2_res["avg_peak_memory_bytes"] / (1024 * 1024)) if flask_engine2_res else 0
 
-            time_delta_percent = ((flask_sqlite_time - flask_inmemory_time) / flask_inmemory_time * 100) if flask_inmemory_time != 0 else float('inf')
-            mem_delta_percent = ((flask_sqlite_mem - flask_inmemory_mem) / flask_inmemory_mem * 100) if flask_inmemory_mem != 0 else float('inf')
+            time_delta_percent = ((flask_engine2_time - flask_engine1_time) / flask_engine1_time * 100) if flask_engine1_time != 0 else float('inf')
+            mem_delta_percent = ((flask_engine2_mem - flask_engine1_mem) / flask_engine1_mem * 100) if flask_engine1_mem != 0 else float('inf')
 
             time_delta_percent_str = f"{time_delta_percent:.2f}" if time_delta_percent != float('inf') else "INF"
             mem_delta_percent_str = f"{mem_delta_percent:.2f}" if mem_delta_percent != float('inf') else "INF"
 
-            print(f"{operation:<30} {flask_inmemory_time:<30.4f} {flask_sqlite_time:<30.4f} {time_delta_percent_str:<18} {flask_inmemory_mem:<30.2f} {flask_sqlite_mem:<30.2f} {mem_delta_percent_str:<18}")
+            print(f"{operation:<30} {flask_engine1_time:<30.4f} {flask_engine2_time:<30.4f} {time_delta_percent_str:<18} {flask_engine1_mem:<30.2f} {flask_engine2_mem:<30.2f} {mem_delta_percent_str:<18}")
     print("\n-------------------------")
 
 
