@@ -949,8 +949,13 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
 
 # Global instance for the application
 # The InMemoryLogQueryEngine constructor will now handle choosing the log file based on app.testing
-# log_engine = InMemoryLogQueryEngine()
-log_engine = SQLiteLogQueryEngine(db='logs.db')
+_log_engine = None
+
+def log_engine():
+    global _log_engine
+    if _log_engine is None:
+        _log_engine = SQLiteLogQueryEngine(db='logs.db')
+    return _log_engine
 
 # Functions exposed as template globals, using the log_engine instance
 @app.template_global()
@@ -960,7 +965,7 @@ def graph_query(queries, nick_split=False, **kwargs):
         if not nick_split:
             data.append({
                 'key': label,
-                'values': log_engine.query_logs(s, **kwargs),
+                'values': log_engine().query_logs(s, **kwargs),
             })
         else:
             for nick in sorted(VALID_NICKS.keys()):
@@ -970,7 +975,7 @@ def graph_query(queries, nick_split=False, **kwargs):
                     nick_label = '%s - %s' % (label, nick)
                 data.append({
                     'key': nick_label,
-                    'values': log_engine.query_logs(s, nick=nick, **kwargs),
+                    'values': log_engine().query_logs(s, nick=nick, **kwargs),
                 })
     return data
 
@@ -984,10 +989,10 @@ def table_query(queries, nick_split=False, order_by_total=False, **kwargs):
     tmp_rows = []
     for (label, s) in queries:
         row = [label]
-        row.append(log_engine.count_occurrences(s, **kwargs)) # Uses global log_engine
+        row.append(log_engine().count_occurrences(s, **kwargs)) # Uses global log_engine
         if nick_split:
             for nick in rows[0][2:]: # These are canonical nicks from VALID_NICKS
-                row.append(log_engine.count_occurrences(s, nick=nick, **kwargs))
+                row.append(log_engine().count_occurrences(s, nick=nick, **kwargs))
         tmp_rows.append(row)
 
     if order_by_total:

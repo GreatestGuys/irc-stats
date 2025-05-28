@@ -7,9 +7,9 @@ from web.logs import log_engine
 
 @app.route('/', methods=['GET'])
 def home():
-    num_tnaks = log_engine.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
+    num_tnaks = log_engine().count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
     trending = []
-    for trend in log_engine.get_trending():
+    for trend in log_engine().get_trending():
       trending.append((trend[0], "%.2f" % trend[1]))
     return render_template('index.html',
         num_tnaks=num_tnaks,
@@ -37,13 +37,13 @@ def query(label=None, regexp=None, cumulative=False):
 
 @app.route('/browse', methods=['GET'])
 def browse():
-    return render_template('browse.html', valid_days=log_engine.get_valid_days())
+    return render_template('browse.html', valid_days=log_engine().get_valid_days())
 
 @app.route('/browse/<int:year>/<int:month>/<int:day>', methods=['GET'])
 def browse_day(year, month, day):
     r = re.compile('(https?://\\S+)', flags=re.IGNORECASE)
 
-    lines, prev_day, next_day = log_engine.get_logs_by_day(year, month, day)
+    lines, prev_day, next_day = log_engine().get_logs_by_day(year, month, day)
 
     # Find all the links in each line and mark them so that they can be rendered
     # as hyperlinks.
@@ -89,8 +89,8 @@ def search():
     page = request.args.get('p', 0, type=int)
     ignore_case = request.args.get('ignore_case', False, type=bool)
     if query:
-        lines = log_engine.search_day_logs(query, ignore_case=ignore_case)
-        histogram = log_engine.search_results_to_chart(
+        lines = log_engine().search_day_logs(query, ignore_case=ignore_case)
+        histogram = log_engine().search_results_to_chart(
             query, ignore_case=ignore_case)
 
     total_lines = len(lines)

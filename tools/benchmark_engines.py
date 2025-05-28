@@ -267,19 +267,19 @@ def main():
                 ]
 
                 # Temporarily replace the app's log_engine instance
-                original_app_log_engine_internal = web.logs.log_engine
+                original_app_log_engine_internal = web.logs._log_engine
                 try:
                     if engine_name == "SQLite":
-                        web.logs.log_engine = SQLiteLogQueryEngine(log_file_path=temp_data_file, batch_size=SQLITE_BATCH_SIZE)
+                        web.logs._log_engine = SQLiteLogQueryEngine(log_file_path=temp_data_file, batch_size=SQLITE_BATCH_SIZE)
                     else: # InMemory
-                        web.logs.log_engine = InMemoryLogQueryEngine(log_file_path=temp_data_file)
+                        web.logs._log_engine = InMemoryLogQueryEngine(log_file_path=temp_data_file)
 
                     with app.test_client() as client:
                         for run_num_flask in range(1, args.runs_per_test + 1):
                             print(f"  Run {run_num_flask}/{args.runs_per_test} for Flask App with {engine_name}...")
                             for route_def in REPRESENTATIVE_ROUTES:
 
-                                web.logs.log_engine.clear_all_caches()
+                                web.logs.log_engine().clear_all_caches()
 
                                 print(f"    Benchmarking route: {route_def['name']} ({route_def['path']})...")
                                 tracemalloc.start()
@@ -312,7 +312,7 @@ def main():
                             gc.collect() # Clean up after each run
                 finally:
                     # Restore the original web.logs.log_engine instance
-                    web.logs.log_engine = original_app_log_engine_internal
+                    web.logs._log_engine = original_app_log_engine_internal
                     gc.collect() # Ensure cleanup after restoring
 
         finally:
