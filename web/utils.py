@@ -1,6 +1,6 @@
 from flask import request
 from web import app, APP_STATIC
-from werkzeug import url_encode
+from urllib.parse import urlencode
 import random
 
 MIN_HUE = 60
@@ -16,7 +16,7 @@ def modify_query(**new_values):
     for key, value in new_values.items():
         args[key] = value
 
-    return '{}?{}'.format(request.path, url_encode(args))
+    return '{}?{}'.format(request.path, urlencode(args))
 
 @app.template_global()
 def color_for_nick(nick):

@@ -6,26 +6,16 @@
   <div class="col-sm-3 col-md-2">
     <h4> Jump to Year </h4>
 		<ul>
-			{% for year in range(2022, 2012, -1) %}
+			{% for year in range(max_year, min_year - 1, -1) %}
 			<li><a href="#{{ year }}"> {{ year }} </a></li>
 			{% endfor %}
 		<ul>
   </div>
 
   <div class="col-sm-9 col-md-10">
-    {{ render_year(2025, valid_days) }}
-    {{ render_year(2024, valid_days) }}
-    {{ render_year(2023, valid_days) }}
-    {{ render_year(2022, valid_days) }}
-    {{ render_year(2021, valid_days) }}
-    {{ render_year(2020, valid_days) }}
-    {{ render_year(2019, valid_days) }}
-    {{ render_year(2018, valid_days) }}
-    {{ render_year(2017, valid_days) }}
-    {{ render_year(2016, valid_days) }}
-    {{ render_year(2015, valid_days) }}
-    {{ render_year(2014, valid_days) }}
-    {{ render_year(2013, valid_days) }}
+    {% for year in range(max_year, min_year - 1, -1) %}
+    {{ render_year(year, valid_days) }}
+    {% endfor %}
   </div>
 
 </div>

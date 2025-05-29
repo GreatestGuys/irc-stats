@@ -3,14 +3,13 @@
 from web import app
 from flask import Flask, url_for, render_template, g, request
 import re
-import web.logs
-import web.trending
+from web.logs import log_engine
 
 @app.route('/', methods=['GET'])
 def home():
-    num_tnaks = web.logs.count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
+    num_tnaks = log_engine().count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
     trending = []
-    for trend in web.trending.get_trending():
+    for trend in log_engine().get_trending():
       trending.append((trend[0], "%.2f" % trend[1]))
     return render_template('index.html',
         num_tnaks=num_tnaks,
@@ -38,25 +37,28 @@ def query(label=None, regexp=None, cumulative=False):
 
 @app.route('/browse', methods=['GET'])
 def browse():
-    return render_template('browse.html', valid_days=web.logs.get_valid_days())
+    valid_days = log_engine().get_valid_days()
+    min_year = None
+    max_year = None
+
+    if valid_days:
+        min_year = min(day[0] for day in valid_days)
+        max_year = max(day[0] for day in valid_days)
+    else:
+        # Default years if no logs are found
+        min_year = 2013
+        max_year = 2025
+
+    return render_template('browse.html',
+                           valid_days=valid_days,
+                           min_year=min_year,
+                           max_year=max_year)
 
 @app.route('/browse/<int:year>/<int:month>/<int:day>', methods=['GET'])
 def browse_day(year, month, day):
     r = re.compile('(https?://\\S+)', flags=re.IGNORECASE)
 
-    day_logs = web.logs.get_logs_by_day()
-    key = (year, month, day)
-    prev_day = None
-    next_day = None
-    lines = []
-    if key in day_logs:
-        keys = sorted(day_logs.keys())
-        lines = day_logs[key]
-        index = keys.index(key)
-        if index != 0:
-            prev_day = keys[index - 1]
-        if index < len(keys) - 1:
-            next_day = keys[index + 1]
+    lines, prev_day, next_day = log_engine().get_logs_by_day(year, month, day)
 
     # Find all the links in each line and mark them so that they can be rendered
     # as hyperlinks.
@@ -102,8 +104,8 @@ def search():
     page = request.args.get('p', 0, type=int)
     ignore_case = request.args.get('ignore_case', False, type=bool)
     if query:
-        lines = web.logs.search_day_logs(query, ignore_case=ignore_case)
-        histogram = web.logs.search_results_to_chart(
+        lines = log_engine().search_day_logs(query, ignore_case=ignore_case)
+        histogram = log_engine().search_results_to_chart(
             query, ignore_case=ignore_case)
 
     total_lines = len(lines)
