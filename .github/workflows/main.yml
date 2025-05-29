@@ -2,9 +2,9 @@ name: Python CI
 
 on:
   push:
-    branches: [ master ] 
+    branches: [ master ]
   pull_request:
-    branches: [ master ] 
+    branches: [ master ]
 
 jobs:
   test: # Renamed from build to test for clarity
@@ -40,23 +40,12 @@ jobs:
     - name: Install dependencies # Flask might not be strictly needed by benchmark script, but good for consistency
       run: |
         python -m pip install --upgrade pip
-        pip install Flask
-
-    - name: Install SQLite dev headers and build tools for current code
-      run: sudo apt-get update && sudo apt-get install -y sqlite3 libsqlite3-dev gcc make
-    
-    - name: Clone and compile sqlite-regex extension for current code
-      run: |
-        git clone https://github.com/asg017/sqlite-regex.git
-        cd sqlite-regex
-        make
-        sudo cp regex.so /usr/lib/
-        cd .. # Back to repo root
+        pip install -r requirements.txt
 
     - name: Run benchmarks on current code
       id: current_benchmarks
       run: |
-        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="current_results.json" --runs-per-test=1
+        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="current_results.json" --compare-engines=InMemory,Sqlite-File --runs-per-test=3
         echo "RESULTS_FILE_CURRENT=current_results.json" >> $GITHUB_ENV # Use GITHUB_ENV for output
 
     - name: Run benchmarks on base commit (PR only)
@@ -65,38 +54,27 @@ jobs:
       run: |
         echo "Checking out base commit: ${{ github.event.pull_request.base.sha }}"
         git checkout ${{ github.event.pull_request.base.sha }}
-        
-        echo "Setting up sqlite-regex for base commit..."
-        # Re-install build tools (apt-get is idempotent)
-        sudo apt-get update && sudo apt-get install -y sqlite3 libsqlite3-dev gcc make
-        # Clean previous clone if any, then clone, build, and install
-        if [ -d "sqlite-regex" ]; then rm -rf sqlite-regex; fi 
-        git clone https://github.com/asg017/sqlite-regex.git
-        cd sqlite-regex
-        make
-        sudo cp regex.so /usr/lib/
-        cd .. # Go back to repo root
-        
+
         echo "Running benchmark script for base commit..."
-        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="base_results.json" --runs-per-test=1
+        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="base_results.json" --compare-engines=InMemory,Sqlite-File --runs-per-test=3
         echo "RESULTS_FILE_BASE=base_results.json" >> $GITHUB_ENV # Use GITHUB_ENV for output
-        
+
         echo "Checking out back to PR head: ${{ github.event.pull_request.head.sha }}"
-        git checkout ${{ github.event.pull_request.head.sha }} 
+        git checkout ${{ github.event.pull_request.head.sha }}
 
     - name: Display benchmark results
       if: always() # Ensure this runs even if previous steps fail
       run: |
         echo "Benchmark Results for Current Code (HEAD):"
         cat current_results.json || echo "current_results.json not found."
-        
+
         if [ -f "base_results.json" ]; then
           echo ""
           echo "Benchmark Results for Base Commit:"
           cat base_results.json || echo "base_results.json not found."
           echo ""
           echo "Simple diff (lines changed):"
-          diff -u base_results.json current_results.json || true 
+          python tools/summarize_benchmarks.py benchmark_results2.json benchmark_results.json Sqlite-File
         fi
 
     - name: Upload benchmark results
