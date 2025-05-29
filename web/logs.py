@@ -85,6 +85,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             'DROP TABLE IF EXISTS totals_fine',
             'DROP TABLE IF EXISTS totals_coarse',
             'DROP TABLE IF EXISTS Words',
+            'DROP TABLE IF EXISTS valid_nicks',
             'DROP INDEX IF EXISTS logs_idx_date',
             'DROP INDEX IF EXISTS totals_fine_idx_date',
             'DROP INDEX IF EXISTS totals_fine_idx_timestamp',
@@ -109,6 +110,10 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
     def _post_insert(self):
         queries = [
+            f"""
+            CREATE TABLE IF NOT EXISTS valid_nicks AS
+                {' UNION ALL '.join([f"SELECT '{nick}' AS nick, '{alias}' AS alias" for nick in VALID_NICKS.keys() for alias in VALID_NICKS[nick]])}
+            """,
             """
             CREATE TABLE IF NOT EXISTS all_days AS
                 WITH RECURSIVE dates(date) AS (
@@ -129,34 +134,28 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             """
             CREATE TABLE IF NOT EXISTS totals_fine AS
                 SELECT
-                    all_days.year as year,
-                    all_days.month as month,
-                    all_days.day as day,
-                    date(all_days.year ||'-01-01','+'||(all_days.month-1)||' month','+'||(all_days.day-1)||' day') AS timestamp_day,
-                    SUM(logs.year > 0) AS count
-                FROM all_days, logs
-                WHERE
-                    all_days.year = logs.year
-                    AND all_days.month = logs.month
-                    AND all_days.day = logs.day
-                GROUP BY 1, 2, 3
+                    nick,
+                    year,
+                    month,
+                    day,
+                    date(year ||'-01-01','+'||(month-1)||' month','+'||(day-1)||' day') AS timestamp_day,
+                    COUNT(*) AS count
+                FROM logs
+                GROUP BY 1, 2, 3, 4, 5
             """,
             "CREATE INDEX IF NOT EXISTS totals_fine_idx_date ON totals_fine (year, month, day)",
             "CREATE INDEX IF NOT EXISTS totals_fine_idx_timestamp ON totals_fine (timestamp_day)",
             """
             CREATE TABLE IF NOT EXISTS totals_coarse AS
                 SELECT
-                    all_days.year as year,
-                    all_days.month as month,
+                    nick,
+                    year,
+                    month,
                     1 as day,
-                    date(all_days.year ||'-01-01','+'||(all_days.month-1)||' month') AS timestamp_day,
-                    SUM(logs.year > 0) AS count
-                FROM all_days, logs
-                WHERE
-                    all_days.year = logs.year
-                    AND all_days.month = logs.month
-                    AND all_days.day = logs.day
-                GROUP BY 1, 2, 3
+                    date(year ||'-01-01','+'||(month-1)||' month') AS timestamp_day,
+                    COUNT(*) AS count
+                FROM logs
+                GROUP BY 1, 2, 3, 4, 5
             """,
             "CREATE INDEX IF NOT EXISTS totals_coarse_idx_date ON totals_coarse (year, month, day)",
             "CREATE INDEX IF NOT EXISTS totals_coarse_idx_timestamp ON totals_coarse (timestamp_day)",
@@ -223,7 +222,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 if len(batch) > 0:
                     yield batch
 
-        if log_data is not None: # Corrected condition
+        if log_data is not None:
             logs_to_insert = [log_data]
         else:
             chosen_log_path = None
@@ -270,7 +269,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         try:
             re.compile(s)
             current_pattern = f"(?i){s}" if ignore_case else s
-            conditions.append(f"regexp(?, {log_table}.message)")
+            conditions.append(f"regexp(?, IFNULL({log_table}.message, ''))")
             sql_params.append(current_pattern)
         except re.error as e_re:
             app.logger.warning(f"Invalid Python regex syntax for pattern '{s}': {e_re}")
@@ -280,8 +279,8 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             if nick in VALID_NICKS:
                 nick_aliases = VALID_NICKS[nick]
                 if nick_aliases:
-                    placeholders = ', '.join('?' * len(nick_aliases))
-                    conditions.append(f"lower({log_table}.nick) IN ({placeholders})")
+                    placeholders = ', '.join(['?'] * len(nick_aliases))
+                    conditions.append(f"lower(IFNULL({log_table}.nick, '')) IN ({placeholders})")
                     sql_params.extend([alias.lower() for alias in nick_aliases])
                 else:
                     return [], [], True
@@ -296,6 +295,10 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             normalize=False, normalize_type=None):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
 
+        def add_cond(cond, param):
+            sql_params.append(param)
+            return cond
+
         if has_error:
             return {}
 
@@ -306,9 +309,10 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     all_days.year as year,
                     all_days.month as month,
                     {'all_days.day' if not coarse else "1"} as day,
-                    SUM(CAST({' AND '.join(conditions)} AS INT)) AS count
-                FROM all_days, logs
-                WHERE
+                    SUM(CAST(logs.message IS NOT NULL AND {' AND '.join(conditions)} AS INT)) AS count
+                FROM all_days
+                LEFT JOIN logs
+                ON
                     all_days.year = logs.year
                     AND all_days.month = logs.month
                     AND all_days.day = logs.day
@@ -320,7 +324,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     month,
                     day,
                     date(year ||'-01-01','+'||(month-1)||' month', '+'||(day-1)||' day') AS timestamp_day,
-                    count
+                    IFNULL(count, 0) AS count
                 FROM matches_no_timestamp
             )
         """
@@ -339,21 +343,25 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             sql_str += f""",
             totals AS (
                 SELECT
-                    matches.year,
-                    matches.month,
-                    matches.day,
-                    SUM(totals.count) AS count
-                FROM matches, {'totals_coarse' if coarse else 'totals_fine'} AS totals
-                WHERE {total_window_cond}
+                    year,
+                    month,
+                    day,
+                    SUM(count) AS count
+                FROM {'totals_coarse' if coarse else 'totals_fine'} AS totals
+                {'INNER JOIN valid_nicks ON LOWER(valid_nicks.alias) = LOWER(totals.nick)' if nick else ''}
+                WHERE {add_cond('valid_nicks.nick = ?', nick) if nick else 'TRUE'}
                 GROUP BY 1, 2, 3
             )
             SELECT
                 matches.year,
                 matches.month,
                 matches.day,
-                CAST(matches.count AS REAL) / CAST(totals.count AS REAL) AS count
+                IFNULL(
+                    CAST(SUM(IFNULL(matches.count, 0)) OVER (ROWS {window_size - 1} PRECEDING) AS REAL) /
+                    CAST(SUM(IFNULL(totals.count, 0)) OVER (ROWS {window_size - 1} PRECEDING) AS REAL), 0) AS count
             FROM matches
-            LEFT JOIN totals ON
+            LEFT OUTER JOIN totals
+            ON
                 matches.year = totals.year
                 AND matches.month = totals.month
                 AND matches.day = totals.day
@@ -377,6 +385,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 'x': get_key(year, month, day),
                 'y': count,
             } for (year, month, day, count) in cursor.fetchall()
+            if year is not None and month is not None and day is not None
         ]
 
         if cumulative:
@@ -399,7 +408,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         cursor = self.conn.cursor()
         try:
             cursor.execute(sql_str, sql_params)
-        except sqlite3.OperationalError as e_sqlite: # Renamed e to e_sqlite for clarity
+        except sqlite3.OperationalError as e_sqlite:
             app.logger.error(f"SQL error in count_occurrences: {e_sqlite} with SQL: {sql_str} and params: {sql_params}")
             return 0
 
@@ -683,8 +692,8 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
                 if nick in VALID_NICKS:
                     if line['nick'].lower() not in VALID_NICKS[nick]:
                         continue
-                else: # Unknown nick key
-                    continue # Skip if nick is specified but not in VALID_NICKS
+                else:
+                    continue
 
             key = get_key(line['timestamp'])
             total_value = get_value(key, totals)
