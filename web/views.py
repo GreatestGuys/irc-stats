@@ -37,7 +37,22 @@ def query(label=None, regexp=None, cumulative=False):
 
 @app.route('/browse', methods=['GET'])
 def browse():
-    return render_template('browse.html', valid_days=log_engine().get_valid_days())
+    valid_days = log_engine().get_valid_days()
+    min_year = None
+    max_year = None
+
+    if valid_days:
+        min_year = min(day[0] for day in valid_days)
+        max_year = max(day[0] for day in valid_days)
+    else:
+        # Default years if no logs are found
+        min_year = 2013
+        max_year = 2025
+
+    return render_template('browse.html',
+                           valid_days=valid_days,
+                           min_year=min_year,
+                           max_year=max_year)
 
 @app.route('/browse/<int:year>/<int:month>/<int:day>', methods=['GET'])
 def browse_day(year, month, day):
