@@ -289,7 +289,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return sql_params, conditions, False
 
-    @functools.lru_cache(maxsize=10)
+    @functools.lru_cache(maxsize=1000)
     def query_logs(self, s,
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
