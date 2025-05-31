@@ -35,9 +35,7 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def query_logs(self, s,
-            cumulative=False, coarse=False, nick=None, ignore_case=False,
-            normalize=False, normalize_type=None):
+    def query_logs(self, queries, nick_split=False, cumulative=False, coarse=False, ignore_case=False, normalize=False, normalize_type=None): # MODIFIED
         pass
 
     @abc.abstractmethod
@@ -244,7 +242,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     )
 
     def clear_all_caches(self):
-        self.query_logs.cache_clear()
+        self._query_logs_single.cache_clear() # MODIFIED
         self._count_occurrences_single.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_trending.cache_clear()
@@ -277,7 +275,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         return sql_params, conditions, False
 
     @functools.lru_cache(maxsize=1000)
-    def query_logs(self, s,
+    def _query_logs_single(self, s, # RENAMED and nick parameter is part of its direct signature
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
@@ -382,6 +380,33 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                 result['y'] = total
 
         return results
+
+    def query_logs(self, queries, nick_split=False, cumulative=False, coarse=False, ignore_case=False, normalize=False, normalize_type=None): # NEW public method
+        data = []
+        for (label, s_query) in queries:
+            if not nick_split:
+                # Pass all relevant kwargs to _query_logs_single
+                series_values = self._query_logs_single(s_query,
+                                                        cumulative=cumulative, coarse=coarse, nick=None,
+                                                        ignore_case=ignore_case, normalize=normalize,
+                                                        normalize_type=normalize_type)
+                data.append({
+                    'key': label,
+                    'values': series_values,
+                })
+            else:
+                for nick_key in sorted(VALID_NICKS.keys()):
+                    current_label = f"{label} - {nick_key}" if label else nick_key
+                    # Pass all relevant kwargs to _query_logs_single
+                    series_values = self._query_logs_single(s_query,
+                                                            cumulative=cumulative, coarse=coarse, nick=nick_key,
+                                                            ignore_case=ignore_case, normalize=normalize,
+                                                            normalize_type=normalize_type)
+                    data.append({
+                        'key': current_label,
+                        'values': series_values,
+                    })
+        return data
 
     def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
         rows = [['', 'Total']]
@@ -638,7 +663,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
                         raise # Specific path provided (not default) and not found, and not testing
 
     def clear_all_caches(self):
-        self.query_logs.cache_clear()
+        self._query_logs_single.cache_clear() # MODIFIED
         self._count_occurrences_single.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_all_days.cache_clear()
@@ -662,7 +687,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         return logs_by_day
 
     @functools.lru_cache(maxsize=1000)
-    def query_logs(self, s,
+    def _query_logs_single(self, s, # RENAMED and nick parameter is part of its direct signature
             cumulative=False, coarse=False, nick=None, ignore_case=False,
             normalize=False, normalize_type=None):
         """
@@ -766,6 +791,33 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
                             sum(matched_window) / sum(total_window))
 
         return sorted(smoothed.values(), key=lambda x: x['x'])
+
+    def query_logs(self, queries, nick_split=False, cumulative=False, coarse=False, ignore_case=False, normalize=False, normalize_type=None): # NEW public method
+        data = []
+        for (label, s_query) in queries:
+            if not nick_split:
+                # Pass all relevant kwargs to _query_logs_single
+                series_values = self._query_logs_single(s_query,
+                                                        cumulative=cumulative, coarse=coarse, nick=None,
+                                                        ignore_case=ignore_case, normalize=normalize,
+                                                        normalize_type=normalize_type)
+                data.append({
+                    'key': label,
+                    'values': series_values,
+                })
+            else:
+                for nick_key in sorted(VALID_NICKS.keys()):
+                    current_label = f"{label} - {nick_key}" if label else nick_key
+                    # Pass all relevant kwargs to _query_logs_single
+                    series_values = self._query_logs_single(s_query,
+                                                            cumulative=cumulative, coarse=coarse, nick=nick_key,
+                                                            ignore_case=ignore_case, normalize=normalize,
+                                                            normalize_type=normalize_type)
+                    data.append({
+                        'key': current_label,
+                        'values': series_values,
+                    })
+        return data
 
     def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
         rows = [['', 'Total']]
@@ -996,25 +1048,10 @@ def log_engine():
 
 # Functions exposed as template globals, using the log_engine instance
 @app.template_global()
-def graph_query(queries, nick_split=False, **kwargs):
-    data = []
-    for (label, s) in queries:
-        if not nick_split:
-            data.append({
-                'key': label,
-                'values': log_engine().query_logs(s, **kwargs),
-            })
-        else:
-            for nick in sorted(VALID_NICKS.keys()):
-                if label == '':
-                    nick_label = nick
-                else:
-                    nick_label = '%s - %s' % (label, nick)
-                data.append({
-                    'key': nick_label,
-                    'values': log_engine().query_logs(s, nick=nick, **kwargs),
-                })
-    return data
+def graph_query(queries, nick_split=False, **kwargs): # SIMPLIFIED
+    # The new log_engine().query_logs method now handles the nick_split logic
+    # and returns data in the format expected by the frontend.
+    return log_engine().query_logs(queries, nick_split=nick_split, **kwargs)
 
 @app.template_global()
 def table_query(queries, **kwargs):

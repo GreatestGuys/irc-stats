@@ -31,12 +31,20 @@ class BaseLogQueryEngineTests:
     def test_query_logs_empty_data(self):
         log_data = []
         engine = self.create_engine(log_data=log_data)
-        self.assertEqual(engine.query_logs("anything"), [])
+        results = engine.query_logs([("anything_label", "anything")])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['key'], "anything_label")
+        self.assertEqual(results[0]['values'], [])
+
 
     def test_query_logs_single_entry_match(self):
         log_data = [{"timestamp": ts(DAY_1), "nick": "UserA", "message": "hello world"}]
         engine = self.create_engine(log_data=log_data)
-        results = engine.query_logs("hello")
+        results_series = engine.query_logs([("hello_label", "hello")])
+        self.assertEqual(len(results_series), 1)
+        self.assertEqual(results_series[0]['key'], "hello_label")
+
+        results = results_series[0]['values']
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['y'], 1)
         expected_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
@@ -45,7 +53,11 @@ class BaseLogQueryEngineTests:
     def test_query_logs_no_match(self):
         log_data = [{"timestamp": ts(DAY_1), "nick": "UserA", "message": "goodbye moon"}]
         engine = self.create_engine(log_data=log_data)
-        results = engine.query_logs("hello")
+        results_series = engine.query_logs([("hello_label", "hello")])
+        self.assertEqual(len(results_series), 1)
+        self.assertEqual(results_series[0]['key'], "hello_label")
+
+        results = results_series[0]['values']
         # The results should contain an entry for each day in the log range, even if count is 0
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['y'], 0)
@@ -57,9 +69,11 @@ class BaseLogQueryEngineTests:
         ]
         engine = self.create_engine(log_data=log_data)
 
-        results_sensitive = engine.query_logs("Hello", ignore_case=False)
+        results_sensitive_series = engine.query_logs([("Hello_label", "Hello")], ignore_case=False)
+        self.assertEqual(len(results_sensitive_series), 1)
+        results_sensitive = results_sensitive_series[0]['values']
         self.assertEqual(len(results_sensitive), 2)
-        # Assuming DAY_1 is results_sensitive[0] and DAY_2 is results_sensitive[1] after sorting by 'x'
+
         results_sensitive_map = {r['x']: r['y'] for r in results_sensitive}
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
         day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
@@ -67,7 +81,9 @@ class BaseLogQueryEngineTests:
         self.assertEqual(results_sensitive_map.get(day2_ts), 0)
 
         engine.clear_all_caches()
-        results_insensitive = engine.query_logs("Hello", ignore_case=True)
+        results_insensitive_series = engine.query_logs([("Hello_label", "Hello")], ignore_case=True)
+        self.assertEqual(len(results_insensitive_series), 1)
+        results_insensitive = results_insensitive_series[0]['values']
         self.assertEqual(len(results_insensitive), 2)
         results_insensitive_map = {r['x']: r['y'] for r in results_insensitive}
         self.assertEqual(results_insensitive_map.get(day1_ts), 1)
@@ -81,28 +97,34 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(DAY_2), "nick": "cosmo", "message": "banana Cosmo"}, # Note: 'cosmo' is an alias for 'Cosmo'
         ]
         engine = self.create_engine(log_data=log_data)
+        sorted_nicks = sorted(list(GLOBAL_VALID_NICKS.keys()))
 
-        results_cosmo = engine.query_logs("apple", nick="Cosmo")
-        self.assertEqual(len(results_cosmo), 2)
+        # Test for "apple" by "Cosmo"
+        results_apple_nicks = engine.query_logs([("apple_label", "apple")], nick_split=True)
+        self.assertEqual(len(results_apple_nicks), len(sorted_nicks))
+
+        cosmo_apple_series = next(s for s in results_apple_nicks if s['key'] == "apple_label - Cosmo")['values']
+        self.assertEqual(len(cosmo_apple_series), 2) # Two days in data range
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
         day2_ts = time.mktime(datetime.datetime(DAY_2.year, DAY_2.month, DAY_2.day).timetuple())
-        results_map = {r['x']: r['y'] for r in results_cosmo}
-        self.assertEqual(results_map.get(day1_ts), 1)
-        self.assertEqual(results_map.get(day2_ts), 0)
+        cosmo_apple_map = {r['x']: r['y'] for r in cosmo_apple_series}
+        self.assertEqual(cosmo_apple_map.get(day1_ts), 1) # "apple Cosmo" by Cosmo
+        self.assertEqual(cosmo_apple_map.get(day2_ts), 0) # No "apple" by Cosmo on DAY_2
+
+        graham_apple_series = next(s for s in results_apple_nicks if s['key'] == "apple_label - Graham")['values']
+        self.assertEqual(len(graham_apple_series), 2)
+        graham_apple_map = {r['x']: r['y'] for r in graham_apple_series}
+        self.assertEqual(graham_apple_map.get(day1_ts), 1) # "apple Graham" by Graham
+        self.assertEqual(graham_apple_map.get(day2_ts), 0)
 
         engine.clear_all_caches()
-        results_graham = engine.query_logs("apple", nick="Graham")
-        self.assertEqual(len(results_graham), 2)
-        results_map_graham = {r['x']: r['y'] for r in results_graham}
-        self.assertEqual(results_map_graham.get(day1_ts), 1)
-        self.assertEqual(results_map_graham.get(day2_ts), 0)
-
-        engine.clear_all_caches()
-        results_cosmo_banana = engine.query_logs("banana", nick="Cosmo")
-        self.assertEqual(len(results_cosmo_banana), 2)
-        results_map_ab = {r['x']: r['y'] for r in results_cosmo_banana}
-        self.assertEqual(results_map_ab.get(day1_ts), 0)
-        self.assertEqual(results_map_ab.get(day2_ts), 1)
+        # Test for "banana" by "Cosmo"
+        results_banana_nicks = engine.query_logs([("banana_label", "banana")], nick_split=True)
+        cosmo_banana_series = next(s for s in results_banana_nicks if s['key'] == "banana_label - Cosmo")['values']
+        self.assertEqual(len(cosmo_banana_series), 2)
+        cosmo_banana_map = {r['x']: r['y'] for r in cosmo_banana_series}
+        self.assertEqual(cosmo_banana_map.get(day1_ts), 0)
+        self.assertEqual(cosmo_banana_map.get(day2_ts), 1) # "banana Cosmo" by cosmo (alias)
 
     def test_query_logs_cumulative_logic(self):
         log_data = [
@@ -112,7 +134,9 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(DAY_3), "nick": "UserA", "message": "event"}
         ]
         engine = self.create_engine(log_data=log_data)
-        results = engine.query_logs("event", cumulative=True)
+        results_series = engine.query_logs([("event_label", "event")], cumulative=True)
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 3)
         # Results are sorted by timestamp 'x'
         self.assertEqual(results[0]['y'], 2) # Day 1: 2 events
@@ -130,8 +154,9 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(day1_month2), "nick": "UserA", "message": "hello"},
         ]
         engine = self.create_engine(log_data=log_data)
-        results = engine.query_logs("hello", coarse=True) # Coarse aggregates by month
-
+        results_series = engine.query_logs([("hello_label", "hello")], coarse=True) # Coarse aggregates by month
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 2) # Two months: Jan, Feb
 
         month1_ts = time.mktime(datetime.datetime(2023, 1, 1).timetuple()) # Start of Jan 2023
@@ -153,7 +178,9 @@ class BaseLogQueryEngineTests:
         ]
         engine = self.create_engine(log_data=log_data)
         # normalize_type="trailing_avg_1" means use current day's total for normalization
-        results = engine.query_logs("target", normalize=True, normalize_type="trailing_avg_1")
+        results_series = engine.query_logs([("target_label", "target")], normalize=True, normalize_type="trailing_avg_1")
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 2)
         results_map = {r['x']: r['y'] for r in results}
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
@@ -178,7 +205,9 @@ class BaseLogQueryEngineTests:
         ]
         engine = self.create_engine(log_data=log_data)
         # normalize=True with no specific normalize_type should use global total
-        results = engine.query_logs("target", normalize=True)
+        results_series = engine.query_logs([("target_label", "target")], normalize=True)
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 2)
         results_map = {r['x']: r['y'] for r in results}
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
@@ -203,7 +232,9 @@ class BaseLogQueryEngineTests:
         ]
         engine = self.create_engine(log_data=log_data)
         # normalize=True and cumulative=True
-        results = engine.query_logs("target", normalize=True, cumulative=True)
+        results_series = engine.query_logs([("target_label", "target")], normalize=True, cumulative=True)
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 3)
         results_map = {r['x']: r['y'] for r in results}
         day1_ts = time.mktime(datetime.datetime(DAY_1.year, DAY_1.month, DAY_1.day).timetuple())
@@ -226,8 +257,9 @@ class BaseLogQueryEngineTests:
         ]
         engine = self.create_engine(log_data=log_data)
         # Coarse aggregates by month, normalize by trailing_avg_1 (current month's total)
-        results = engine.query_logs("target", coarse=True, normalize=True, normalize_type="trailing_avg_1")
-
+        results_series = engine.query_logs([("target_label", "target")], coarse=True, normalize=True, normalize_type="trailing_avg_1")
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 2) # Two months: Jan, Feb
 
         month1_ts = time.mktime(datetime.datetime(2023, 1, 1).timetuple()) # Start of Jan 2023
@@ -411,7 +443,9 @@ class BaseLogQueryEngineTests:
         # Bob: "testing" (2023-03-15)
         # Charlie: "HELLO COSMO" (2023-03-16)
 
-        results = engine.query_logs("hello", ignore_case=True) # Matches "hello world" and "HELLO COSMO"
+        results_series = engine.query_logs([("hello_label", "hello")], ignore_case=True) # Matches "hello world" and "HELLO COSMO"
+        self.assertEqual(len(results_series), 1)
+        results = results_series[0]['values']
         self.assertEqual(len(results), 2) # Two days in sample: 2023-03-15, 2023-03-16
 
         day1_sample_dt = datetime.datetime(2023, 3, 15)
