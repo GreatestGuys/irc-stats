@@ -19,7 +19,7 @@ import web.logs # Import the web.logs module to access its global log_engine ins
 # Fixed parameters for data generation
 DATA_GEN_START_DATE = "2013-01-01"
 DATA_GEN_END_DATE = "2025-03-31"
-SQLITE_BATCH_SIZE = 1000 # For SQLiteLogQueryEngine instantiation
+SQLITE_BATCH_SIZE = 10 # For SQLiteLogQueryEngine instantiation
 
 REPRESENTATIVE_QUERIES = [
     {"name": "startup", "method_to_call": None}, # Special case for startup
