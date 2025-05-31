@@ -7,7 +7,7 @@ from web.logs import log_engine
 
 @app.route('/', methods=['GET'])
 def home():
-    num_tnaks = log_engine().count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
+    num_tnaks = log_engine().count_occurrences([('', r'\b[Tt][Nn][Aa][Kk]')])[1][1]
     trending = []
     for trend in log_engine().get_trending():
       trending.append((trend[0], "%.2f" % trend[1]))
