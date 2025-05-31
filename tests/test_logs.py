@@ -7,8 +7,9 @@ import datetime
 # Add the parent directory to the Python path to allow importing web.logs
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from web.logs import InMemoryLogQueryEngine, SQLiteLogQueryEngine, VALID_NICKS as GLOBAL_VALID_NICKS
+from web.logs import InMemoryLogQueryEngine, SQLiteLogQueryEngine, VALID_NICKS as GLOBAL_VALID_NICKS, graph_query, table_query
 from web import app # To set app.testing
+from web import logs as web_logs_module # For accessing _log_engine
 
 # Helper to create timestamp strings from datetime objects
 def ts(dt_obj):
@@ -547,6 +548,197 @@ class TestSQLiteLogQueryEngine(BaseLogQueryEngineTests, unittest.TestCase):
         # app.testing must be True for SQLiteLogQueryEngine to use test_log_sample.json by default
         # Using a small batch_size for testing purposes, if applicable to any specific tests.
         return SQLiteLogQueryEngine(log_data=log_data, log_file_path=log_file_path, batch_size=10)
+
+# --- Tests for graph_query and table_query ---
+
+# Timestamps for test_log_sample.json (2023-03-15 and 2023-03-16)
+DAY_1_SAMPLE = datetime.datetime(2023, 3, 15)
+DAY_2_SAMPLE = datetime.datetime(2023, 3, 16)
+# For graph_query, 'x' values are daily timestamps (start of the day)
+DAY_1_SAMPLE_TS_X = time.mktime(datetime.datetime(DAY_1_SAMPLE.year, DAY_1_SAMPLE.month, DAY_1_SAMPLE.day).timetuple())
+DAY_2_SAMPLE_TS_X = time.mktime(datetime.datetime(DAY_2_SAMPLE.year, DAY_2_SAMPLE.month, DAY_2_SAMPLE.day).timetuple())
+
+
+class BaseLogHelperFunctionTests:
+    # This class is a mixin and should not inherit from unittest.TestCase directly.
+    # Test methods will be inherited by concrete test classes.
+    # It assumes self.log_engine_instance is set by the concrete class's setUp,
+    # and that web.logs._log_engine has been set to this instance.
+
+    def setUp(self):
+        # Ensure caches are clear on the specific engine instance being used.
+        # self.log_engine_instance is set by the concrete test class's setUp
+        # and is the same instance as web_logs_module._log_engine during the test.
+        if hasattr(self, 'log_engine_instance') and self.log_engine_instance:
+            self.log_engine_instance.clear_all_caches()
+        else:
+            # This case should ideally not be hit if setUp in concrete classes is correct
+            # but as a fallback, try to clear caches on the global engine if it's set.
+            if web_logs_module._log_engine:
+                 web_logs_module._log_engine.clear_all_caches()
+
+
+    def test_graph_query_single_no_split(self):
+        queries = [("Hello Count", "hello")]
+        result = graph_query(queries, ignore_case=True) # hello world, HELLO COSMO
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['key'], "Hello Count")
+        self.assertEqual(len(result[0]['values']), 2) # Two days in sample data
+
+        values_map = {v['x']: v['y'] for v in result[0]['values']}
+        self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X), 1) # "hello world"
+        self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X), 1) # "HELLO COSMO"
+
+    def test_graph_query_multiple_no_split(self):
+        queries = [("Hello Count", "hello"), ("Test Count", "test")]
+        result = graph_query(queries, ignore_case=True)
+
+        self.assertEqual(len(result), 2)
+
+        hello_series = next(s for s in result if s['key'] == "Hello Count")
+        test_series = next(s for s in result if s['key'] == "Test Count")
+
+        self.assertEqual(len(hello_series['values']), 2)
+        hello_values_map = {v['x']: v['y'] for v in hello_series['values']}
+        self.assertEqual(hello_values_map.get(DAY_1_SAMPLE_TS_X), 1) # "hello world"
+        self.assertEqual(hello_values_map.get(DAY_2_SAMPLE_TS_X), 1) # "HELLO COSMO"
+
+        self.assertEqual(len(test_series['values']), 2)
+        test_values_map = {v['x']: v['y'] for v in test_series['values']}
+        self.assertEqual(test_values_map.get(DAY_1_SAMPLE_TS_X), 1) # "testing"
+        self.assertEqual(test_values_map.get(DAY_2_SAMPLE_TS_X), 1) # "another day another test"
+
+    def test_graph_query_single_with_split(self):
+        queries = [("Cosmo Mentions", "COSMO")] # Matches "HELLO COSMO"
+        result = graph_query(queries, nick_split=True, ignore_case=True)
+
+        self.assertEqual(len(result), len(GLOBAL_VALID_NICKS))
+
+        for nick_series in result:
+            expected_label_part = nick_series['key'].split(' - ')[1]
+            self.assertIn(expected_label_part, GLOBAL_VALID_NICKS.keys())
+
+            values_map = {v['x']: v['y'] for v in nick_series['values']}
+            current_nick_key = nick_series['key'].split(' - ')[1]
+
+            if current_nick_key == 'Cosmo':
+                # "HELLO COSMO" by "cosmo" (Day 2)
+                self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X, 0), 0)
+                self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X, 0), 1)
+            else:
+                self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X, 0), 0)
+                self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X, 0), 0)
+
+    def test_graph_query_empty_label_with_split(self):
+        queries = [("", "hello")] # Search term "hello"
+        result = graph_query(queries, nick_split=True, ignore_case=True)
+
+        self.assertEqual(len(result), len(GLOBAL_VALID_NICKS))
+        for nick_series in result:
+            current_nick_key = nick_series['key'] # Label is just the nick
+            self.assertIn(current_nick_key, GLOBAL_VALID_NICKS.keys())
+            values_map = {v['x']: v['y'] for v in nick_series['values']}
+
+            if current_nick_key == 'Zhenya':
+                # "hello world" by "zhenya" (Day 1)
+                self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X, 0), 1)
+                self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X, 0), 0)
+            elif current_nick_key == 'Cosmo':
+                # "HELLO COSMO" by "cosmo" (Day 2) contains "hello"
+                self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X, 0), 0)
+                self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X, 0), 1)
+            else:
+                # Other nicks (Will, Graham, Jesse) have no "hello" messages in sample
+                self.assertEqual(values_map.get(DAY_1_SAMPLE_TS_X, 0), 0)
+                self.assertEqual(values_map.get(DAY_2_SAMPLE_TS_X, 0), 0)
+
+    def test_table_query_single_no_split(self):
+        queries = [("Hello Count", "hello")]
+        result = table_query(queries, ignore_case=True)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], ['', 'Total'])
+        self.assertEqual(result[1][0], "Hello Count")
+        self.assertEqual(result[1][1], 2) # "hello world", "HELLO COSMO"
+
+    def test_table_query_multiple_no_split(self):
+        queries = [("Hello Count", "hello"), ("Test Count", "test")]
+        result = table_query(queries, ignore_case=True)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0], ['', 'Total'])
+
+        self.assertEqual(result[1][0], "Hello Count")
+        self.assertEqual(result[1][1], 2)
+
+        self.assertEqual(result[2][0], "Test Count")
+        self.assertEqual(result[2][1], 2) # "testing", "another day another test"
+
+    def test_table_query_single_with_split(self):
+        queries = [("World Mentions", "world")] # "hello world" by Alice
+        result = table_query(queries, nick_split=True, ignore_case=True)
+
+        expected_header = ['', 'Total'] + sorted(list(GLOBAL_VALID_NICKS.keys()))
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], expected_header)
+
+        self.assertEqual(result[1][0], "World Mentions")
+        self.assertEqual(result[1][1], 1) # Total "world" occurrences from "hello world" by zhenya
+
+        # Check counts for each nick in GLOBAL_VALID_NICKS
+        sorted_nicks = sorted(list(GLOBAL_VALID_NICKS.keys()))
+        for i, nick_name in enumerate(sorted_nicks):
+            actual_count_for_nick = result[1][2+i]
+            if nick_name == 'Zhenya':
+                # "hello world" by "zhenya"
+                self.assertEqual(actual_count_for_nick, 1, f"Count for nick {nick_name} should be 1")
+            else:
+                self.assertEqual(actual_count_for_nick, 0, f"Count for nick {nick_name} should be 0")
+
+    def test_table_query_order_by_total(self):
+        # "hello" (2 occurrences), "testing" (1 occurrence in sample from Bob)
+        queries_for_order = [("Testing Query", "testing"), ("Hello Query", "hello")]
+        result_ordered = table_query(queries_for_order, ignore_case=True, order_by_total=True)
+
+        self.assertEqual(len(result_ordered), 3) # Header + 2 data rows
+        self.assertEqual(result_ordered[0], ['', 'Total'])
+
+        self.assertEqual(result_ordered[1][0], "Hello Query") # Total 2
+        self.assertEqual(result_ordered[1][1], 2)
+        self.assertEqual(result_ordered[2][0], "Testing Query") # Total 1 ("testing" by Bob)
+        self.assertEqual(result_ordered[2][1], 1)
+
+
+class TestInMemoryLogHelperFunctions(BaseLogHelperFunctionTests, unittest.TestCase):
+    def setUp(self):
+        app.testing = True
+        self.original_log_engine = web_logs_module._log_engine
+        # InMemoryLogQueryEngine uses test_log_sample.json by default when app.testing is True
+        # and log_file_path is None.
+        self.log_engine_instance = InMemoryLogQueryEngine(log_file_path=None, log_data=None)
+        web_logs_module._log_engine = self.log_engine_instance
+        super().setUp()
+
+    def tearDown(self):
+        web_logs_module._log_engine = self.original_log_engine
+        if hasattr(super(), 'tearDown'):
+            super().tearDown()
+
+class TestSQLiteLogHelperFunctions(BaseLogHelperFunctionTests, unittest.TestCase):
+    def setUp(self):
+        app.testing = True
+        self.original_log_engine = web_logs_module._log_engine
+        # SQLiteLogQueryEngine uses test_log_sample.json by default when app.testing is True
+        # and log_file_path is None.
+        self.log_engine_instance = SQLiteLogQueryEngine(db=':memory:', log_file_path=None, log_data=None, batch_size=10)
+        web_logs_module._log_engine = self.log_engine_instance
+        super().setUp()
+
+    def tearDown(self):
+        web_logs_module._log_engine = self.original_log_engine
+        if hasattr(super(), 'tearDown'):
+            super().tearDown()
 
 
 if __name__ == '__main__':
