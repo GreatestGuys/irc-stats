@@ -145,62 +145,49 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             """,
             "CREATE INDEX IF NOT EXISTS totals_fine_idx_date ON totals_fine (year, month, day)",
             "CREATE INDEX IF NOT EXISTS totals_fine_idx_timestamp ON totals_fine (timestamp_day)",
-            #"""
-            #CREATE TABLE IF NOT EXISTS totals_coarse AS
-            #    SELECT
-            #        nick,
-            #        year,
-            #        month,
-            #        1 as day,
-            #        date(year ||'-01-01','+'||(month-1)||' month') AS timestamp_day,
-            #        COUNT(*) AS count
-            #    FROM logs
-            #    GROUP BY 1, 2, 3, 4, 5
-            #""",
-            #"CREATE INDEX IF NOT EXISTS totals_coarse_idx_date ON totals_coarse (year, month, day)",
-            #"CREATE INDEX IF NOT EXISTS totals_coarse_idx_timestamp ON totals_coarse (timestamp_day)",
-            # """
-            # CREATE TABLE IF NOT EXISTS Words AS
-            #     WITH RECURSIVE _Words (year, month, day, word, remaining) AS (
-            #         SELECT
-            #             year, month, day,
-            #             CASE WHEN logs.message LIKE '% %'
-            #                     THEN SUBSTRING(logs.message, 1, INSTR(logs.message, ' ')-1)
-            #                     ELSE REPLACE(logs.message, ' ', '')
-            #                     END AS word
-            #             ,
-            #             CASE WHEN logs.message LIKE '% %'
-            #                     THEN SUBSTRING(logs.message, INSTR(logs.message, ' ')+1)
-            #                     ELSE ''
-            #                     END AS remaining
-            #         FROM logs
-            #         UNION ALL
-            #         SELECT
-            #             year, month, day,
-            #             CASE WHEN _words.remaining LIKE '% %'
-            #                     THEN SUBSTRING(_words.remaining, 1, INSTR(_words.remaining, ' ')-1)
-            #                     ELSE REPLACE(_words.remaining, ' ', '')
-            #                     END AS word
-            #             , CASE WHEN _words.remaining LIKE '% %'
-            #                     THEN SUBSTRING(_words.remaining, INSTR(_words.remaining, ' ')+1)
-            #                     ELSE ''
-            #                     END AS remaining
-            #         FROM _Words AS _words
-            #         WHERE
-            #             _words.remaining <> ''
-            #             AND _words.remaining <> ' '
-            #             AND _words.remaining IS NOT NULL
-            #             AND LOWER(_words.remaining) IS NOT NULL
-            #     )
-            #     SELECT
-            #         year,
-            #         month,
-            #         day,
-            #         LOWER(word) AS word,
-            #         COUNT(*) AS count
-            #     FROM _Words
-            #     GROUP BY 1, 2, 3, 4
-            # """
+            """
+            CREATE TABLE IF NOT EXISTS Words AS
+                WITH RECURSIVE _Words (year, month, day, word, remaining) AS (
+                    SELECT
+                        year, month, day,
+                        CASE WHEN logs.message LIKE '% %'
+                                THEN SUBSTRING(logs.message, 1, INSTR(logs.message, ' ')-1)
+                                ELSE REPLACE(logs.message, ' ', '')
+                                END AS word
+                        ,
+                        CASE WHEN logs.message LIKE '% %'
+                                THEN SUBSTRING(logs.message, INSTR(logs.message, ' ')+1)
+                                ELSE ''
+                                END AS remaining
+                    FROM (SELECT * FROM logs ORDER BY timestamp DESC LIMIT 1000) AS logs
+                    UNION ALL
+                    SELECT
+                        year, month, day,
+                        CASE WHEN _words.remaining LIKE '% %'
+                                THEN SUBSTRING(_words.remaining, 1, INSTR(_words.remaining, ' ')-1)
+                                ELSE REPLACE(_words.remaining, ' ', '')
+                                END AS word
+                        , CASE WHEN _words.remaining LIKE '% %'
+                                THEN SUBSTRING(_words.remaining, INSTR(_words.remaining, ' ')+1)
+                                ELSE ''
+                                END AS remaining
+                    FROM _Words AS _words
+                    WHERE
+                        _words.remaining <> ''
+                        AND _words.remaining <> ' '
+                        AND _words.remaining IS NOT NULL
+                        AND LOWER(_words.remaining) IS NOT NULL
+                )
+                SELECT
+                    year,
+                    month,
+                    day,
+                    LOWER(TRIM(word)) AS word,
+                    COUNT(*) AS count
+                FROM _Words
+                WHERE TRIM(word) <> ''
+                GROUP BY 1, 2, 3, 4
+            """
         ]
         with self.conn:
             for query in queries:
@@ -555,8 +542,6 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         Return a list of the top trending terms. The values of the list will be
         tuples of the word along with the relative fractional increase in usage.
         """
-        return []
-
         sql_params = []
         def add_cond(cond, param):
             sql_params.append(param)
