@@ -241,7 +241,7 @@ class BaseLogQueryEngineTests:
 
     def test_count_occurrences_empty_data(self):
         engine = self.create_engine(log_data=[])
-        self.assertEqual(engine.count_occurrences("anything"), 0)
+        self.assertEqual(engine.count_occurrences([('label', "anything")]), [['', 'Total'], ['label', 0]])
 
     def test_count_occurrences_simple(self):
         log_data = [
@@ -249,19 +249,20 @@ class BaseLogQueryEngineTests:
             {"timestamp": ts(DAY_1), "nick": "UserA", "message": "HELLO again"}
         ]
         engine = self.create_engine(log_data=log_data)
-        self.assertEqual(engine.count_occurrences("hello", ignore_case=True), 2)
+        self.assertEqual(engine.count_occurrences([("", "hello")], ignore_case=True)[1][1], 2)
         engine.clear_all_caches() # Still useful if the engine itself uses caching (like InMemory)
-        self.assertEqual(engine.count_occurrences("hello", ignore_case=False), 1)
+        self.assertEqual(engine.count_occurrences([("", "hello")], ignore_case=False)[1][1], 1)
 
     def test_count_occurrences_nick_filter(self):
         log_data = [
             {"timestamp": ts(DAY_1), "nick": "Cosmo", "message": "msg from Cosmo"},
             {"timestamp": ts(DAY_1), "nick": "Graham", "message": "msg from Graham"}
         ]
+        nick_list = list(GLOBAL_VALID_NICKS.keys())
         engine = self.create_engine(log_data=log_data)
-        self.assertEqual(engine.count_occurrences("msg", nick="Cosmo"), 1)
-        engine.clear_all_caches()
-        self.assertEqual(engine.count_occurrences("msg", nick="Jesse"), 0) # Jesse is not in log_data for this test
+        self.assertEqual(engine.count_occurrences([("", "msg")], nick_split=True)[1][1], 2) # Total
+        self.assertEqual(engine.count_occurrences([("", "msg")], nick_split=True)[1][2 + nick_list.index('Cosmo')], 1)
+        self.assertEqual(engine.count_occurrences([("", "msg")], nick_split=True)[1][2 + nick_list.index('Jesse')], 0)
 
     def test_get_valid_days_empty_data(self):
         engine = self.create_engine(log_data=[])
@@ -424,8 +425,8 @@ class BaseLogQueryEngineTests:
         self.assertEqual(results_map.get(exp_x2), 1) # "HELLO COSMO" on 2023-03-16
 
         engine.clear_all_caches()
-        count = engine.count_occurrences("test", ignore_case=True) # "testing", "another day another test"
-        self.assertEqual(count, 2)
+        count = engine.count_occurrences([("", "test")], ignore_case=True) # "testing", "another day another test"
+        self.assertEqual(count[1][1], 2)
 
     def test_get_trending(self):
         if self.is_in_memory:

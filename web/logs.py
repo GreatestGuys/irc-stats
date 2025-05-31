@@ -41,7 +41,7 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def count_occurrences(self, s, ignore_case=False, nick=None):
+    def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
         pass
 
     @abc.abstractmethod
@@ -245,7 +245,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
     def clear_all_caches(self):
         self.query_logs.cache_clear()
-        self.count_occurrences.cache_clear()
+        self._count_occurrences_single.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_trending.cache_clear()
 
@@ -383,8 +383,29 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return results
 
+    def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
+        rows = [['', 'Total']]
+        if nick_split:
+            for nick in sorted(VALID_NICKS.keys()):
+                rows[0].append(nick)
+
+        tmp_rows = []
+        for (label, s) in queries:
+            row = [label]
+            row.append(self._count_occurrences_single(s, ignore_case=ignore_case))
+            if nick_split:
+                for nick in rows[0][2:]: # These are canonical nicks from VALID_NICKS
+                    row.append(self._count_occurrences_single(s, nick=nick, ignore_case=ignore_case))
+            tmp_rows.append(row)
+
+        if order_by_total:
+            tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
+
+        rows += tmp_rows
+        return rows
+
     @functools.lru_cache(maxsize=1000)
-    def count_occurrences(self, s, ignore_case=False, nick=None):
+    def _count_occurrences_single(self, s, ignore_case=False, nick=None):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
 
         if has_error:
@@ -618,7 +639,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
 
     def clear_all_caches(self):
         self.query_logs.cache_clear()
-        self.count_occurrences.cache_clear()
+        self._count_occurrences_single.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_all_days.cache_clear()
         self.get_logs_by_day.cache_clear()
@@ -746,8 +767,29 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
 
         return sorted(smoothed.values(), key=lambda x: x['x'])
 
+    def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
+        rows = [['', 'Total']]
+        if nick_split:
+            for nick in sorted(VALID_NICKS.keys()):
+                rows[0].append(nick)
+
+        tmp_rows = []
+        for (label, s) in queries:
+            row = [label]
+            row.append(self._count_occurrences_single(s, ignore_case=ignore_case))
+            if nick_split:
+                for nick in rows[0][2:]: # These are canonical nicks from VALID_NICKS
+                    row.append(self._count_occurrences_single(s, nick=nick, ignore_case=ignore_case))
+            tmp_rows.append(row)
+
+        if order_by_total:
+            tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
+
+        rows += tmp_rows
+        return rows
+
     @functools.lru_cache(maxsize=1000)
-    def count_occurrences(self, s, ignore_case=False, nick=None):
+    def _count_occurrences_single(self, s, ignore_case=False, nick=None):
         flags = ignore_case and re.IGNORECASE or 0
         try: r = re.compile(s, flags=flags)
         except: return 0
@@ -975,23 +1017,5 @@ def graph_query(queries, nick_split=False, **kwargs):
     return data
 
 @app.template_global()
-def table_query(queries, nick_split=False, order_by_total=False, **kwargs):
-    rows = [['', 'Total']]
-    if nick_split:
-        for nick in sorted(VALID_NICKS.keys()):
-            rows[0].append(nick)
-
-    tmp_rows = []
-    for (label, s) in queries:
-        row = [label]
-        row.append(log_engine().count_occurrences(s, **kwargs)) # Uses global log_engine
-        if nick_split:
-            for nick in rows[0][2:]: # These are canonical nicks from VALID_NICKS
-                row.append(log_engine().count_occurrences(s, nick=nick, **kwargs))
-        tmp_rows.append(row)
-
-    if order_by_total:
-        tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
-
-    rows += tmp_rows
-    return rows
+def table_query(queries, **kwargs):
+    return log_engine().count_occurrences(queries, **kwargs)
