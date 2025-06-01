@@ -350,8 +350,9 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         for day_tuple in all_days_list:
             key = get_key_chart(day_tuple)
             counts[key] = {'x': key, 'y': 0}
-        for r_tuple in results:
-            day_of_result = r_tuple[0]
+        # results is a tuple (paginated_list, total_count), iterate over paginated_list
+        for r_tuple in results[0]:
+            day_of_result = r_tuple[0] # This is the day_tuple from the search result entry
             counts[get_key_chart(day_of_result)]['y'] += 1
 
         return [{
