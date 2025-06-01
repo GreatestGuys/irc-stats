@@ -74,7 +74,7 @@ jobs:
           cat base_results.json || echo "base_results.json not found."
           echo ""
           echo "Simple diff (lines changed):"
-          python tools/summarize_benchmarks.py benchmark_results2.json benchmark_results.json Sqlite-Memory
+          python tools/summarize_benchmarks.py base_results.json current_results.json Sqlite-Memory | tee summary.txt
         fi
 
     - name: Upload benchmark results
@@ -85,4 +85,5 @@ jobs:
         path: |
           current_results.json
           base_results.json
+          summary.txt
         if-no-files-found: ignore # Don't fail if base_results.json is not there
