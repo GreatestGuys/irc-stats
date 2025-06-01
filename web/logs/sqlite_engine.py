@@ -195,7 +195,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     )
 
     def clear_all_caches(self):
-        self._query_logs_single.cache_clear()
+        self._query_logs.cache_clear()
         self._count_occurrences.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_trending.cache_clear()
@@ -228,88 +228,108 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
         return sql_params, conditions, False
 
     @functools.lru_cache(maxsize=1000)
-    def _query_logs_single(self, s,
-            cumulative=False, coarse=False, nick=None, ignore_case=False,
+    def _query_logs(self, queries,
+            cumulative=False, coarse=False, nick_split=False, ignore_case=False,
             normalize=False, normalize_type=None):
-        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
+        if queries is None or len(queries) == 0:
+            return []
+
+        sql_params = []
+        conditions = []
+
+        def add_query_cond(query):
+            pattern = f"(?i){query}" if ignore_case else query
+            sql_params.append(pattern)
+            return f"regexp(?, IFNULL(message, ''))"
 
         def add_cond(cond, param):
             sql_params.append(param)
             return cond
 
-        if has_error:
-            return {}
-
         sql_str = f"""
         WITH
             matches_no_timestamp AS (
                 SELECT
+                    {'valid_nicks.nick AS nick,' if nick_split else ''}
                     all_days.year as year,
                     all_days.month as month,
                     {'all_days.day' if not coarse else "1"} as day,
-                    SUM(CAST(logs.message IS NOT NULL AND {' AND '.join(conditions)} AS INT)) AS count
-                FROM all_days
+                    {','.join([f'SUM(CAST(logs.message IS NOT NULL AND {add_query_cond(query)} AS INT)) AS count_{i}' for i, (label, query) in enumerate(queries)])}
+                FROM all_days {', valid_nicks' if nick_split else ''}
                 LEFT JOIN logs
                 ON
                     all_days.year = logs.year
                     AND all_days.month = logs.month
                     AND all_days.day = logs.day
-                GROUP BY 1, 2, 3
+                    {'AND LOWER(valid_nicks.alias) = LOWER(logs.nick)' if nick_split else ''}
+                GROUP BY 1, 2, 3 {', 4' if nick_split else ''}
             ),
             matches AS (
                 SELECT
+                    {'nick,' if  nick_split else ''}
                     year,
                     month,
                     day,
                     date(year ||'-01-01','+'||(month-1)||' month', '+'||(day-1)||' day') AS timestamp_day,
-                    IFNULL(count, 0) AS count
+                    {','.join([f'IFNULL(count_{i}, 0) AS count_{i}' for i in range(len(queries))])}
                 FROM matches_no_timestamp
             )
         """
         if not normalize:
-            sql_str += """
-            SELECT year, month, day, count
+            sql_str += f"""
+            SELECT
+                {'nick,' if nick_split else ''}
+                year, month, day,
+                {','.join([f'count_{i}' for i in range(len(queries))])}
             FROM matches
-            ORDER BY 1 ASC, 2 ASC, 3 ASC
+            ORDER BY 1 ASC, 2 ASC, 3 ASC {', 4 ASC' if nick_split else ''}
             """
         elif str(normalize_type or '').startswith('trailing_avg_'):
             window_size = int(normalize_type[13:])
-            lookback_start = f"date(matches.timestamp_day, '-{window_size - 1} day')"
-            matches_date = 'matches.timestamp_day'
-            totals_date = 'totals.timestamp_day'
-            total_window_cond = f'{lookback_start} <= {totals_date} AND {totals_date} <= {matches_date}'
             sql_str += f""",
             totals AS (
                 SELECT
+                    {'valid_nicks.nick,' if nick_split else ''}
                     year,
                     month,
                     {'1' if coarse else 'day'} as day,
                     SUM(count) AS count
-                FROM 'totals_fine' AS totals
-                {'INNER JOIN valid_nicks ON LOWER(valid_nicks.alias) = LOWER(totals.nick)' if nick else ''}
-                WHERE {add_cond('valid_nicks.nick = ?', nick) if nick else 'TRUE'}
-                GROUP BY 1, 2, 3
+                FROM totals_fine AS totals
+                {'INNER JOIN valid_nicks ON LOWER(valid_nicks.alias) = LOWER(totals.nick)' if nick_split else ''}
+                GROUP BY 1, 2, 3 {', 4' if nick_split else ''}
             )
             SELECT
+                {'matches.nick,' if nick_split else ''}
                 matches.year,
                 matches.month,
                 matches.day,
+                {','.join([
+                    f'''
                 IFNULL(
-                    CAST(SUM(IFNULL(matches.count, 0)) OVER (ROWS {window_size - 1} PRECEDING) AS REAL) /
-                    CAST(SUM(IFNULL(totals.count, 0)) OVER (ROWS {window_size - 1} PRECEDING) AS REAL), 0) AS count
+                    CAST(SUM(IFNULL(matches.count_{i}, 0)) OVER ({'PARTITION BY matches.nick' if nick_split else ''} ROWS {window_size - 1} PRECEDING) AS REAL) /
+                    CAST(SUM(IFNULL(totals.count, 0)) OVER ({'PARTITION BY matches.nick' if nick_split else ''} ROWS {window_size - 1} PRECEDING) AS REAL), 0) AS count_{i}
+                    '''
+                    for i in range(len(queries))
+                ])}
             FROM matches
             LEFT OUTER JOIN totals
             ON
                 matches.year = totals.year
                 AND matches.month = totals.month
                 AND matches.day = totals.day
-            ORDER BY 1 ASC, 2 ASC, 3 ASC
+                {'AND matches.nick = totals.nick' if nick_split else ''}
+            ORDER BY 1 ASC, 2 ASC, 3 ASC {', 4 ASC' if nick_split else ''}
             """
         else:
-            sql_str += """
-            SELECT year, month, day, CAST(count AS REAL) / (SELECT COUNT(*) FROM logs) AS count
+            sql_str += f"""
+            SELECT
+                {'nick,' if nick_split else ''}
+                year,
+                month,
+                day,
+                {','.join([f'CAST(count_{i} AS REAL) / (SELECT COUNT(*) FROM logs) AS count_{i}' for i in range(len(queries))])}
             FROM matches
-            ORDER BY 1 ASC, 2 ASC, 3 ASC
+            ORDER BY 1 ASC, 2 ASC, 3 ASC {', 4 ASC' if nick_split else ''}
             """
 
         def get_key(year, month, day):
@@ -318,23 +338,41 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         cursor = self.conn.cursor()
         cursor.execute(sql_str, sql_params)
-        results = [
-            {
-                'x': get_key(year, month, day),
-                'y': count,
-            } for (year, month, day, count) in cursor.fetchall()
-            if year is not None and month is not None and day is not None
-        ]
+        results = {}
+        for i in range(len(queries)):
+            label = queries[i][0]
+            if nick_split:
+                for nick in VALID_NICKS.keys():
+                    new_label = f'{label} - {nick}' if len(label) > 0 else nick
+                    results[new_label] = []
+            else:
+                results[label] = []
+
+        for row in cursor.fetchall():
+            year, month, day = row[1:4] if nick_split else row[0:3]
+            counts = row[4:] if nick_split else row[3:]
+            for i in range(len(queries)):
+                label = queries[i][0]
+                if nick_split:
+                    label = f'{label} - {row[0]}' if len(label) > 0 else row[0]
+                if year is not None and month is not None and day is not None:
+                    results[label].append({
+                            'x': get_key(year, month, day),
+                            'y': counts[i],
+                        })
 
         if cumulative:
-            total = 0
-            for result in results:
-                total += result['y']
-                result['y'] = total
+            for label, result in results.items():
+                total = 0
+                for values in result:
+                    total += values['y']
+                    values['y'] = total
 
-        return results
+        return [{'key': label, 'values': values} for label, values in results.items()]
 
-    def query_logs(self, queries, nick_split=False, cumulative=False, coarse=False, ignore_case=False, normalize=False, normalize_type=None):
+    def query_logs(self, queries, **kwargs):
+        return self._query_logs(tuple(queries), **kwargs)
+
         data = []
         for (label, s_query) in queries:
             if not nick_split:
