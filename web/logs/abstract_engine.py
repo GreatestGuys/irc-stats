@@ -31,7 +31,13 @@ class AbstractLogQueryEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def search_day_logs(self, s, ignore_case=False):
+    def search_day_logs(self, s, ignore_case=False, limit=None, offset=None):
+        """
+        Return a tuple: (results, total_count)
+        Where `results` is a list of matching log lines of the form:
+                ((year, month, day), index, line, match_start, match_end)
+        And `total_count` is the total number of matching log lines before pagination.
+        """
         pass
 
     @abc.abstractmethod

@@ -500,16 +500,34 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return (current_day_logs, prev_day_tuple, next_day_tuple)
 
-    def search_day_logs(self, s, ignore_case=False):
+    def search_day_logs(self, s, ignore_case=False, limit=None, offset=None):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, None, log_table='this_log')
 
         if has_error:
-            return []
+            return ([], 0)
 
         flags = ignore_case and re.IGNORECASE or 0
-        try: r_compile = re.compile(s, flags=flags) # Renamed to avoid conflict
-        except: return []
+        try:
+            r_compile = re.compile(s, flags=flags)
+        except re.error:
+            return ([], 0)
 
+        # Get total count
+        count_sql = f"""
+            SELECT COUNT(*)
+            FROM logs AS this_log
+            WHERE {' AND '.join(conditions)}
+        """
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(count_sql, sql_params)
+            total_count = cursor.fetchone()[0]
+        except sqlite3.OperationalError as e:
+            app.logger.error(f"Error fetching total count in search_day_logs: {e}")
+            return ([], 0)
+
+        # Get paginated results
+        data_sql_params = list(sql_params) # Create a new list for data query params
         sql = f"""
             SELECT
                 this_log.year,
@@ -524,18 +542,30 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             GROUP BY 1, 2, 3, 5, 6, 7
             ORDER BY this_log.timestamp DESC
         """
-        cursor = self.conn.cursor()
-        cursor.execute(sql, sql_params)
+
+        if limit is not None:
+            sql += " LIMIT ?"
+            data_sql_params.append(limit)
+        if offset is not None:
+            sql += " OFFSET ?"
+            data_sql_params.append(offset)
 
         results = []
-        for row in cursor.fetchall():
-            date = (row[0], row[1], row[2])
-            index = row[3]
-            line = {'timestamp': row[4], 'nick': row[5], 'message': row[6]}
-            m = r_compile.search(line['message']) # Use renamed compiled regex
-            if m != None:
-                results.append((date, index, line, m.start(), m.end()))
-        return results
+        try:
+            cursor.execute(sql, data_sql_params)
+            for row in cursor.fetchall():
+                date = (row[0], row[1], row[2])
+                index = row[3] # This is day_index calculated by ROW_NUMBER()
+                line = {'timestamp': float(row[4]), 'nick': row[5], 'message': row[6]}
+                m = r_compile.search(line['message'])
+                if m is not None:
+                    results.append((date, index, line, m.start(), m.end()))
+        except sqlite3.OperationalError as e:
+            app.logger.error(f"Error fetching paginated results in search_day_logs: {e}")
+            # total_count might be available, but results are not, returning empty results for consistency
+            return ([], total_count if 'total_count' in locals() else 0)
+
+        return (results, total_count)
 
     def search_results_to_chart(self, s, ignore_case=False):
         sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, None)

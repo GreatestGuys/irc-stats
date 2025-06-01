@@ -301,14 +301,16 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
         return (current_day_logs, prev_day_tuple, next_day_tuple)
 
     @functools.lru_cache(maxsize=1000)
-    def search_day_logs(self, s, ignore_case=False):
+    def search_day_logs(self, s, ignore_case=False, limit=None, offset=None):
         """
-        Return a list of matching log lines of the form:
-                ((year, month, day), index, line)
+        Return a tuple: (results, total_count)
+        Where `results` is a list of matching log lines of the form:
+                ((year, month, day), index, line, match_start, match_end)
+        And `total_count` is the total number of matching log lines before pagination.
         """
         flags = ignore_case and re.IGNORECASE or 0
         try: r = re.compile(s, flags=flags)
-        except: return []
+        except: return ([], 0)
 
         results = []
         day_logs = self._get_all_logs_by_day()
@@ -319,7 +321,18 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
                 if m != None:
                     results.append((day_tuple_key, index, line, m.start(), m.end()))
                 index += 1
-        return results
+
+        total_count = len(results)
+
+        if offset is None:
+            offset = 0
+
+        if limit is None:
+            paginated_results = results[offset:]
+        else:
+            paginated_results = results[offset:offset + limit]
+
+        return (paginated_results, total_count)
 
     @functools.lru_cache(maxsize=1000)
     def search_results_to_chart(self, s, ignore_case=False):

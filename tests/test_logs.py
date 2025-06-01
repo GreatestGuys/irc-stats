@@ -401,6 +401,75 @@ class BaseLogQueryEngineTests:
         self.assertEqual(results[1][0], (DAY_1.year, DAY_1.month, DAY_1.day))
         self.assertEqual(results[1][1], 0) # index
 
+    def test_search_day_logs_pagination(self):
+        # Defines specific timestamps for log entries to ensure predictable ordering within a day if necessary.
+        # For this test, we'll assume simple message content is enough to distinguish.
+        log_data = [
+            {"timestamp": ts(DAY_1), "nick": "UserA", "message": "item 1 filter_me day1_occurrence1"},
+            {"timestamp": ts(DAY_1 + datetime.timedelta(seconds=1)), "nick": "UserA", "message": "item 2 filter_me day1_occurrence2"},
+            {"timestamp": ts(DAY_2), "nick": "UserA", "message": "item 3 filter_me day2_occurrence1"},
+            {"timestamp": ts(DAY_2 + datetime.timedelta(seconds=1)), "nick": "UserA", "message": "item 4 no_match day2_occurrence2"},
+            {"timestamp": ts(DAY_3), "nick": "UserA", "message": "item 5 filter_me day3_occurrence1"},
+        ]
+        engine = self.create_engine(log_data=log_data)
+        query = "filter_me"
+
+        # Expected full results order (search_day_logs sorts days DESC, then items by input order/timestamp ASC):
+        # 1. item 5 (DAY_3)
+        # 2. item 3 (DAY_2)
+        # 3. item 1 (DAY_1)
+        # 4. item 2 (DAY_1)
+        # Total expected matches = 4
+
+        # Test 1: limit=2, offset=0
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=2, offset=0)
+        self.assertEqual(total_count, 4, "Test 1: Total count mismatch")
+        self.assertEqual(len(results), 2, "Test 1: Results length mismatch")
+        self.assertIn("item 5 filter_me day3_occurrence1", results[0][2]['message'], "Test 1: Item 0 content error") # DAY_3
+        self.assertIn("item 3 filter_me day2_occurrence1", results[1][2]['message'], "Test 1: Item 1 content error") # DAY_2
+
+        # Test 2: limit=2, offset=2
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=2, offset=2)
+        self.assertEqual(total_count, 4, "Test 2: Total count mismatch")
+        self.assertEqual(len(results), 2, "Test 2: Results length mismatch")
+        self.assertIn("item 1 filter_me day1_occurrence1", results[0][2]['message'], "Test 2: Item 0 content error") # DAY_1, first item
+        self.assertIn("item 2 filter_me day1_occurrence2", results[1][2]['message'], "Test 2: Item 1 content error") # DAY_1, second item
+
+        # Test 3: limit=3, offset=3 (limit exceeds remaining)
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=3, offset=3)
+        self.assertEqual(total_count, 4, "Test 3: Total count mismatch")
+        self.assertEqual(len(results), 1, "Test 3: Results length mismatch")
+        self.assertIn("item 2 filter_me day1_occurrence2", results[0][2]['message'], "Test 3: Item 0 content error") # Last item (DAY_1, second item)
+
+        # Test 4: offset beyond total items
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=2, offset=4)
+        self.assertEqual(total_count, 4, "Test 4: Total count mismatch")
+        self.assertEqual(len(results), 0, "Test 4: Results length mismatch")
+
+        # Test 5: No limit (limit=None)
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=None, offset=1)
+        self.assertEqual(total_count, 4, "Test 5: Total count mismatch")
+        self.assertEqual(len(results), 3, "Test 5: Results length mismatch")
+        self.assertIn("item 3 filter_me day2_occurrence1", results[0][2]['message'], "Test 5: Item 0 content error") # Starts from offset 1 (DAY_2 item)
+        self.assertIn("item 1 filter_me day1_occurrence1", results[1][2]['message'], "Test 5: Item 1 content error")
+        self.assertIn("item 2 filter_me day1_occurrence2", results[2][2]['message'], "Test 5: Item 2 content error")
+
+        # Test 6: No offset (offset=None)
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=2, offset=None)
+        self.assertEqual(total_count, 4, "Test 6: Total count mismatch")
+        self.assertEqual(len(results), 2, "Test 6: Results length mismatch")
+        self.assertIn("item 5 filter_me day3_occurrence1", results[0][2]['message'], "Test 6: Item 0 content error") # DAY_3
+        self.assertIn("item 3 filter_me day2_occurrence1", results[1][2]['message'], "Test 6: Item 1 content error") # DAY_2
+
+        # Test 7: No limit, no offset
+        results, total_count = engine.search_day_logs(query, ignore_case=False, limit=None, offset=None)
+        self.assertEqual(total_count, 4, "Test 7: Total count mismatch")
+        self.assertEqual(len(results), 4, "Test 7: Results length mismatch")
+        self.assertIn("item 5 filter_me day3_occurrence1", results[0][2]['message'], "Test 7: Item 0 content error")
+        self.assertIn("item 3 filter_me day2_occurrence1", results[1][2]['message'], "Test 7: Item 1 content error")
+        self.assertIn("item 1 filter_me day1_occurrence1", results[2][2]['message'], "Test 7: Item 2 content error")
+        self.assertIn("item 2 filter_me day1_occurrence2", results[3][2]['message'], "Test 7: Item 3 content error")
+
     def test_search_results_to_chart(self):
         day1_month1 = datetime.datetime(2023, 1, 15, 10, 0, 0)
         day2_month1 = datetime.datetime(2023, 1, 16, 10, 0, 0) # Same month
