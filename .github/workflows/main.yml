@@ -45,7 +45,7 @@ jobs:
     - name: Run benchmarks on current code
       id: current_benchmarks
       run: |
-        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="current_results.json" --compare-engines=InMemory,Sqlite-File --runs-per-test=3
+        python tools/benchmark_engines.py --dataset-sizes="1000,10000" --output-results-file="current_results.json" --compare-engines=InMemory,Sqlite-Memory --runs-per-test=3
         echo "RESULTS_FILE_CURRENT=current_results.json" >> $GITHUB_ENV # Use GITHUB_ENV for output
 
     - name: Run benchmarks on base commit (PR only)
@@ -56,7 +56,7 @@ jobs:
         git checkout ${{ github.event.pull_request.base.sha }}
 
         echo "Running benchmark script for base commit..."
-        python tools/benchmark_engines.py --dataset-sizes="1000,5000" --output-results-file="base_results.json" --compare-engines=InMemory,Sqlite-File --runs-per-test=3
+        python tools/benchmark_engines.py --dataset-sizes="1000,10000" --output-results-file="base_results.json" --compare-engines=InMemory,Sqlite-Memory --runs-per-test=3
         echo "RESULTS_FILE_BASE=base_results.json" >> $GITHUB_ENV # Use GITHUB_ENV for output
 
         echo "Checking out back to PR head: ${{ github.event.pull_request.head.sha }}"
@@ -74,7 +74,7 @@ jobs:
           cat base_results.json || echo "base_results.json not found."
           echo ""
           echo "Simple diff (lines changed):"
-          python tools/summarize_benchmarks.py benchmark_results2.json benchmark_results.json Sqlite-File
+          python tools/summarize_benchmarks.py base_results.json current_results.json Sqlite-Memory | tee summary.txt
         fi
 
     - name: Upload benchmark results
@@ -85,4 +85,5 @@ jobs:
         path: |
           current_results.json
           base_results.json
+          summary.txt
         if-no-files-found: ignore # Don't fail if base_results.json is not there

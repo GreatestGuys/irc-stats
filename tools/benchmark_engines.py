@@ -26,37 +26,37 @@ REPRESENTATIVE_QUERIES = [
     {
         "name": "query_simple_keyword",
         "method_to_call": "query_logs",
-        "query_args": {"s": "request"} # "request" is a common word in VOCABULARY
+        "query_args": {"queries": [("request", "request")]} # "request" is a common word in VOCABULARY
     },
     {
         "name": "query_regex_keyword",
         "method_to_call": "query_logs",
-        "query_args": {"s": "err[oa]r\\w+", "ignore_case": True} # error/errors
+        "query_args": {"queries": [("error", "err[oa]r\\w+")], "ignore_case": True} # error/errors
     },
     {
         "name": "query_nick_filter",
         "method_to_call": "query_logs",
-        "query_args": {"s": "user", "nick": "Cosmo"} # "user" is common, User1 will exist
+        "query_args": {"queries": [("user", "user")], "nick_split": True} # "user" is common, User1 will exist
     },
     {
         "name": "query_cumulative",
         "method_to_call": "query_logs",
-        "query_args": {"s": "response", "cumulative": True} # "response" is common
+        "query_args": {"queries": [("response", "response")], "cumulative": True} # "response" is common
     },
     {
         "name": "query_normalize",
         "method_to_call": "query_logs",
-        "query_args": {"s": "login", "normalize": True, "normalize_type": "trailing_avg_1"} # "login" is in VOCABULARY
+        "query_args": {"queries": [("login", "login")], "normalize": True, "normalize_type": "trailing_avg_1"} # "login" is in VOCABULARY
     },
     {
         "name": "count_simple_keyword",
         "method_to_call": "count_occurrences",
-        "query_args": {"s": "file"} # "file" is in VOCABULARY
+        "query_args": {"queries": [("file", "file")]} # "file" is in VOCABULARY
     },
     {
         "name": "count_regex_keyword_ignore_case",
         "method_to_call": "count_occurrences",
-        "query_args": {"s": "Serv[ie]ce\\d+", "ignore_case": True} # e.g. Service123, Servoce456
+        "query_args": {"queries": [("service", "Serv[ie]ce\\d+")], "ignore_case": True} # e.g. Service123, Servoce456
     },
     {
         "name": "get_valid_days",

@@ -7,7 +7,7 @@ from web.logs import log_engine
 
 @app.route('/', methods=['GET'])
 def home():
-    num_tnaks = log_engine().count_occurrences(r'\b[Tt][Nn][Aa][Kk]')
+    num_tnaks = log_engine().count_occurrences([('', r'\b[Tt][Nn][Aa][Kk]')])[1][1]
     trending = []
     for trend in log_engine().get_trending():
       trending.append((trend[0], "%.2f" % trend[1]))
@@ -97,36 +97,57 @@ def search():
     LINES_PER_PAGE = 25
     lines = []
     histogram = []
+    total_lines = 0 # Initialize total_lines
 
-    start = 0
-    end = 0
     query = request.args.get('q')
     page = request.args.get('p', 0, type=int)
+    # Flask's type=bool for request.args.get should handle "true"/"false" strings.
+    # Example: request.args.get('ignore_case', False, type=bool)
+    # If 'ignore_case' is "True" or "true", it becomes True.
+    # If 'ignore_case' is "False" or "false", it becomes False.
+    # If missing, it defaults to False.
     ignore_case = request.args.get('ignore_case', False, type=bool)
+
+
     if query:
-        lines = log_engine().search_day_logs(query, ignore_case=ignore_case)
+        offset = page * LINES_PER_PAGE
+        # search_day_logs now returns (paginated_lines, total_count_before_pagination)
+        lines, total_lines = log_engine().search_day_logs(
+            query,
+            ignore_case=ignore_case,
+            limit=LINES_PER_PAGE,
+            offset=offset
+        )
         histogram = log_engine().search_results_to_chart(
             query, ignore_case=ignore_case)
 
-    total_lines = len(lines)
-    if lines:
-        start = min(page * LINES_PER_PAGE, len(lines) - 1)
-        end = min((page + 1) * LINES_PER_PAGE, len(lines))
-        lines = lines[start:end]
-
-    for i in range(0, len(lines)):
+    # Process lines for highlighting (operates on the paginated lines received)
+    processed_lines = []
+    for i in range(len(lines)): # Iterate over the paginated lines
         (day, index, line, match_start, match_end) = lines[i]
         prefix = line['message'][:match_start]
         match = line['message'][match_start:match_end]
         sufix = line['message'][match_end:]
-        lines[i] = (day, index, line, prefix, match, sufix)
+        processed_lines.append((day, index, line, prefix, match, sufix))
 
-    next_page = (page + 1) * LINES_PER_PAGE < total_lines and page + 1 or None
-    prev_page = None
-    if page > 0: prev_page = page - 1
+    lines = processed_lines # Replace lines with processed_lines
+
+    # Calculate display start and end numbers (1-based for user display)
+    start_display = 0
+    end_display = 0
+    if total_lines > 0: # Only calculate if there are any lines at all
+        if lines: # If there are results on the current page
+            start_display = (page * LINES_PER_PAGE) + 1
+            end_display = (page * LINES_PER_PAGE) + len(lines)
+        # If lines is empty but total_lines > 0, it means we are on an empty page (e.g. page beyond last results)
+        # start_display and end_display remain 0, which is fine for template logic like "Showing 0 to 0 of X" or similar.
+
+    # Calculate next and previous page numbers
+    next_page = page + 1 if (page * LINES_PER_PAGE) + LINES_PER_PAGE < total_lines else None
+    prev_page = page - 1 if page > 0 else None
 
     return render_template('search.html',
-            start=(start + 1), end=end,
+            start=start_display, end=end_display, # Use new display variables
             lines=lines, total_lines=total_lines,
             histogram=histogram,
             next_page=next_page, prev_page=prev_page)
