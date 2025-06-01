@@ -10,7 +10,7 @@ import time
 
 from web import app, APP_STATIC # Keep web import for app and APP_STATIC
 from .abstract_engine import AbstractLogQueryEngine # Import from local abstract_engine
-from .constants import VALID_NICKS # Import VALID_NICKS from .constants
+from ..logs import VALID_NICKS # Import VALID_NICKS from the logs package __init__
 
 class InMemoryLogQueryEngine(AbstractLogQueryEngine):
     def __init__(self, log_file_path=None, log_data=None):
@@ -294,7 +294,7 @@ class InMemoryLogQueryEngine(AbstractLogQueryEngine):
             pass
 
         for line in self.logs:
-            dt = datetime.datetime.fromtimestamp(float(line['timestamp']))
+            dt = datetime.datetime.fromtimestamp(int(float(line['timestamp'])))
             if (dt.year, dt.month, dt.day) == current_day_tuple:
                 current_day_logs.append(line)
 

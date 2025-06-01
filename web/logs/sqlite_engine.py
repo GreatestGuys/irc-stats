@@ -370,7 +370,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
         return [{'key': label, 'values': values} for label, values in results.items()]
 
-    def query_logs(self, queries, **kwargs):
+    def query_logs(self, queries=[], **kwargs):
         return self._query_logs(tuple(queries), **kwargs)
 
         data = []
@@ -397,7 +397,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     })
         return data
 
-    def count_occurrences(self, queries, **kwargs):
+    def count_occurrences(self, queries=[], **kwargs):
         return self._count_occurrences(tuple(queries), **kwargs)
 
     @functools.lru_cache(maxsize=1000)
