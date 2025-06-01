@@ -9,6 +9,7 @@ import sqlite3
 import sqlite_regex
 import ijson
 import time
+from collections import defaultdict
 
 from web import app, APP_STATIC # Keep web import for app and APP_STATIC
 from .abstract_engine import AbstractLogQueryEngine # Import from local abstract_engine
@@ -195,7 +196,7 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
 
     def clear_all_caches(self):
         self._query_logs_single.cache_clear()
-        self._count_occurrences_single.cache_clear()
+        self._count_occurrences.cache_clear()
         self.get_valid_days.cache_clear()
         self.get_trending.cache_clear()
 
@@ -358,35 +359,34 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
                     })
         return data
 
-    def count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
-        rows = [['', 'Total']]
-        if nick_split:
-            for nick in sorted(VALID_NICKS.keys()):
-                rows[0].append(nick)
-
-        tmp_rows = []
-        for (label, s) in queries:
-            row = [label]
-            row.append(self._count_occurrences_single(s, ignore_case=ignore_case))
-            if nick_split:
-                for nick in rows[0][2:]:
-                    row.append(self._count_occurrences_single(s, nick=nick, ignore_case=ignore_case))
-            tmp_rows.append(row)
-
-        if order_by_total:
-            tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
-
-        rows += tmp_rows
-        return rows
+    def count_occurrences(self, queries, **kwargs):
+        return self._count_occurrences(tuple(queries), **kwargs)
 
     @functools.lru_cache(maxsize=1000)
-    def _count_occurrences_single(self, s, ignore_case=False, nick=None):
-        sql_params, conditions, has_error = self._prepare_sql_filters(s, ignore_case, nick)
+    def _count_occurrences(self, queries, ignore_case=False, nick_split=False, order_by_total=False):
+        sql_params = []
+        conditions = []
 
-        if has_error:
-            return 0
+        def add_query_cond(query):
+            pattern = f"(?i){query}" if ignore_case else query
+            sql_params.append(pattern)
+            return f"regexp(?, IFNULL(message, ''))"
 
-        sql_str = "SELECT COUNT(*) FROM logs WHERE " + " AND ".join(conditions)
+        query_columns = (','.join([
+                f'IFNULL(SUM({add_query_cond(query)}), 0) AS q_{i}'
+                for i, (label, query) in enumerate(queries)
+            ]))
+
+        if not nick_split:
+            sql_str = f"SELECT {query_columns} FROM logs"
+        else:
+            sql_str = f"""
+            SELECT valid_nicks.nick, {query_columns}
+            FROM logs
+            INNER JOIN valid_nicks ON LOWER(logs.nick) = LOWER(valid_nicks.alias)
+            GROUP BY 1
+            ORDER BY 1 ASC
+            """
 
         cursor = self.conn.cursor()
         try:
@@ -395,8 +395,30 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             app.logger.error(f"SQL error in count_occurrences: {e_sqlite} with SQL: {sql_str} and params: {sql_params}")
             return 0
 
-        result = cursor.fetchone()
-        return result[0] if result else 0
+        results = cursor.fetchall()
+        nick_results = defaultdict(lambda: [0] * len(queries))
+        for result in results:
+            nick_results[result[0]]  = result[1:]
+
+        rows = [['', 'Total']]
+        if nick_split:
+            for nick in sorted(VALID_NICKS.keys()):
+                rows[0].append(nick)
+
+        tmp_rows = []
+        for i, (label, s) in enumerate(queries):
+            row = [label]
+            row.append(sum([r[(1 if nick_split else 0) + i] for r in results])) # Total
+            if nick_split:
+                for nick in rows[0][2:]:
+                    row.append(nick_results[nick][i])
+            tmp_rows.append(row)
+
+        if order_by_total:
+            tmp_rows = sorted(tmp_rows, key=lambda x: x[1], reverse=True)
+
+        rows += tmp_rows
+        return rows
 
     @functools.lru_cache(maxsize=1)
     def get_valid_days(self):
