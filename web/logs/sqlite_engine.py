@@ -540,14 +540,18 @@ class SQLiteLogQueryEngine(AbstractLogQueryEngine):
             FROM logs AS this_log
             WHERE {' AND '.join(conditions)}
             GROUP BY 1, 2, 3, 5, 6, 7
-            ORDER BY this_log.timestamp DESC
+            ORDER BY this_log.year DESC, this_log.month DESC, this_log.day DESC, this_log.timestamp ASC
         """
 
         if limit is not None:
             sql += " LIMIT ?"
             data_sql_params.append(limit)
-        if offset is not None:
-            sql += " OFFSET ?"
+            if offset is not None: # OFFSET can only be used if LIMIT is present
+                sql += " OFFSET ?"
+                data_sql_params.append(offset)
+        elif offset is not None: # limit is None, but offset is not
+            # To use OFFSET, LIMIT must be specified. Use -1 for no limit.
+            sql += " LIMIT -1 OFFSET ?"
             data_sql_params.append(offset)
 
         results = []

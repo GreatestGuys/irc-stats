@@ -386,20 +386,25 @@ class BaseLogQueryEngineTests:
         log_data = [log_d1, log_d2, log_d3_no_match]
         engine = self.create_engine(log_data=log_data)
 
-        results = engine.search_day_logs("arch me")
-        self.assertEqual(len(results), 2)
+        # search_day_logs returns (paginated_results, total_count)
+        actual_results, total_count = engine.search_day_logs("arch me")
+
+        self.assertEqual(total_count, 2)
+        self.assertEqual(len(actual_results), 2)
 
         # Result 0 should be from DAY_2 (later date, appears first due to reverse day sort)
-        self.assertEqual(results[0][2]['message'], "search me on day 2")
-        self.assertEqual(results[0][0], (DAY_2.year, DAY_2.month, DAY_2.day)) # (day_tuple)
-        self.assertEqual(results[0][1], 0) # index within that day's log list
-        self.assertEqual(results[0][3], 2) # start match index
-        self.assertEqual(results[0][4], 9) # end match index
+        self.assertEqual(actual_results[0][2]['message'], "search me on day 2")
+        self.assertEqual(actual_results[0][0], (DAY_2.year, DAY_2.month, DAY_2.day)) # (day_tuple)
+        # The index within the day's log list might vary based on how logs for a day are retrieved and ordered.
+        # Assuming it's 0 if it's the only match or first match for that day.
+        self.assertEqual(actual_results[0][1], 0) # index within that day's log list
+        self.assertEqual(actual_results[0][3], 2) # start match index
+        self.assertEqual(actual_results[0][4], 9) # end match index
 
         # Result 1 should be from DAY_1
-        self.assertEqual(results[1][2]['message'], "search me on day 1")
-        self.assertEqual(results[1][0], (DAY_1.year, DAY_1.month, DAY_1.day))
-        self.assertEqual(results[1][1], 0) # index
+        self.assertEqual(actual_results[1][2]['message'], "search me on day 1")
+        self.assertEqual(actual_results[1][0], (DAY_1.year, DAY_1.month, DAY_1.day))
+        self.assertEqual(actual_results[1][1], 0) # index
 
     def test_search_day_logs_pagination(self):
         # Defines specific timestamps for log entries to ensure predictable ordering within a day if necessary.
